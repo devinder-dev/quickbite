@@ -14,9 +14,9 @@ Full plan: `~/.claude/plans/lets-read-the-files-unified-galaxy.md`
 
 | Phase | Goal | Status |
 |---|---|---|
-| 0 | Bootstrap — unzip, git, CLAUDE.md, CONTEXT.md, hooks, Redis in compose | ✅ In progress |
-| 1a | Postgres init.sql — create per-service databases | ⏳ Pending |
-| 1b | Menu service — Postgres table + Redis cache | ⏳ Pending |
+| 0 | Bootstrap — unzip, git, CLAUDE.md, CONTEXT.md, hooks, Redis in compose | ✅ Done |
+| 1a | Postgres init.sql — create per-service databases | ✅ Done |
+| 1b | Menu service — Postgres table + Redis cache | ✅ Done |
 | 1c | Order service — Postgres tables | ⏳ Pending |
 | 1d | Kitchen service — Postgres table | ⏳ Pending |
 | 1e | Notification service — Postgres table (audit log) | ⏳ Pending |
@@ -28,17 +28,19 @@ Full plan: `~/.claude/plans/lets-read-the-files-unified-galaxy.md`
 
 ## Current state
 
-**Phase 0 in progress.** Scaffold unzipped, git initialized on `main`. CLAUDE.md updated. Hooks and Redis not yet added.
+**Phase 1b complete (not yet committed).** Menu service now reads from `menu_db` Postgres with a Redis cache-aside layer (60s TTL on key `menu:all`). `services/menu/src/db.ts` and `services/menu/src/cache.ts` are new; `index.ts` rewritten with the `buildServer` pattern. Verified manually: cache miss → Postgres query → cache hit on second call (confirmed via logs and curl). Snyk scan: 0 issues. Typecheck green across all services.
+
+Also fixed along the way:
+- `tsconfig.base.json` — added `allowImportingTsExtensions: true` (needed for the project's `.ts`-extension import convention to typecheck)
+- `.env.example` — corrected per-service DB URL comments to all use `DATABASE_URL` (matches what docker-compose actually injects; the old `MENU_DATABASE_URL` / `KITCHEN_DATABASE_URL` names below were never real env vars services read)
 
 ## Next step
 
-Complete Phase 0:
-- Add typecheck hook to `.claude/settings.json`
-- Add custom commands: `new-migration.md`, `run-tests.md`
-- Add Redis to `docker-compose.yml`
-- Run `bun install` and `bun run typecheck` — must be green
+**Phase 1c — Order service Postgres tables.**
 
-Then start **Phase 1a**: create `docker/init.sql` to initialize per-service databases.
+Files to create/modify:
+- `services/order/src/db.ts` — connect to `order_db`, create `orders` + `order_items` tables
+- `services/order/src/index.ts` — replace in-memory `Map` with DB INSERT (POST /orders) and SELECT (GET /orders/:id)
 
 ## Key files to know
 
@@ -51,10 +53,10 @@ Then start **Phase 1a**: create `docker/init.sql` to initialize per-service data
 
 ## Environment
 
+Each service reads the same env var name, `DATABASE_URL` — docker-compose.yml sets a different value per container:
+
 ```bash
 RABBITMQ_URL=amqp://guest:guest@localhost:5672
-ORDER_DATABASE_URL=postgres://quickbite:quickbite@localhost:5432/order_db
-MENU_DATABASE_URL=postgres://quickbite:quickbite@localhost:5432/menu_db
-KITCHEN_DATABASE_URL=postgres://quickbite:quickbite@localhost:5432/kitchen_db
+DATABASE_URL=postgres://quickbite:quickbite@localhost:5432/<service>_db   # order_db | menu_db | kitchen_db | notification_db
 REDIS_URL=redis://localhost:6379
 ```
