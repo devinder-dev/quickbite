@@ -1,0 +1,63 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports: ["5672:5672", "15672:15672"]   # 15672 = management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: quickbite
+      POSTGRES_PASSWORD: quickbite
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  gateway:
+    build: { context: ., dockerfile: services/gateway/Dockerfile }
+    environment:
+      PORT: 3000
+      MENU_URL: http://menu:3001
+      ORDER_URL: http://order:3002
+    depends_on: [menu, order]
+    ports: ["3000:3000"]
+
+  menu:
+    build: { context: ., dockerfile: services/menu/Dockerfile }
+    environment: { PORT: 3001 }
+
+  order:
+    build: { context: ., dockerfile: services/order/Dockerfile }
+    environment:
+      PORT: 3002
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+  kitchen:
+    build: { context: ., dockerfile: services/kitchen/Dockerfile }
+    environment:
+      PORT: 3003
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+  notification:
+    build: { context: ., dockerfile: services/notification/Dockerfile }
+    environment:
+      PORT: 3004
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+  nginx:
+    image: nginx:alpine
+    volumes: ["./nginx/nginx.conf:/etc/nginx/nginx.conf:ro"]
+    ports: ["8080:80"]
+    depends_on: [gateway]
+
+volumes:
+  pgdata:

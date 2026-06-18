@@ -1,0 +1,18 @@
+{
+  "name": "quickbite",
+  "private": true,
+  "workspaces": ["packages/*", "services/*"],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p packages/shared && tsc --noEmit -p services/gateway && tsc --noEmit -p services/menu && tsc --noEmit -p services/order && tsc --noEmit -p services/kitchen && tsc --noEmit -p services/notification",
+    "test": "bun test",
+    "dev:gateway": "bun run --filter @quickbite/gateway dev",
+    "dev:menu": "bun run --filter @quickbite/menu dev",
+    "dev:order": "bun run --filter @quickbite/order dev",
+    "dev:kitchen": "bun run --filter @quickbite/kitchen dev",
+    "dev:notification": "bun run --filter @quickbite/notification dev"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.6.0"
+  }
+}

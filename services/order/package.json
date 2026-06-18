@@ -1,0 +1,14 @@
+{
+  "name": "@quickbite/order",
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch run src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@quickbite/shared": "workspace:*",
+    "fastify": "^5.0.0",
+    "zod": "^3.23.8"
+  }
+}
