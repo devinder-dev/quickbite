@@ -14,7 +14,23 @@ services:
       POSTGRES_USER: quickbite
       POSTGRES_PASSWORD: quickbite
     ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quickbite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   gateway:
     build: { context: ., dockerfile: services/gateway/Dockerfile }
@@ -27,31 +43,49 @@ services:
 
   menu:
     build: { context: ., dockerfile: services/menu/Dockerfile }
-    environment: { PORT: 3001 }
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://quickbite:quickbite@postgres:5432/menu_db
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   order:
     build: { context: ., dockerfile: services/order/Dockerfile }
     environment:
       PORT: 3002
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      DATABASE_URL: postgres://quickbite:quickbite@postgres:5432/order_db
+      REDIS_URL: redis://redis:6379
     depends_on:
       rabbitmq: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   kitchen:
     build: { context: ., dockerfile: services/kitchen/Dockerfile }
     environment:
       PORT: 3003
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      DATABASE_URL: postgres://quickbite:quickbite@postgres:5432/kitchen_db
+      REDIS_URL: redis://redis:6379
     depends_on:
       rabbitmq: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   notification:
     build: { context: ., dockerfile: services/notification/Dockerfile }
     environment:
       PORT: 3004
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      DATABASE_URL: postgres://quickbite:quickbite@postgres:5432/notification_db
+      REDIS_URL: redis://redis:6379
     depends_on:
       rabbitmq: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
   nginx:
     image: nginx:alpine

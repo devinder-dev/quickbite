@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/devindersingh/quickbite/quickbite && bun run typecheck 2>&1 | tail -20"
+          }
+        ]
+      }
+    ]
+  }
+}

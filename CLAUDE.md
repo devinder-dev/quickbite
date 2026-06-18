@@ -16,6 +16,7 @@ Flow: `Order` publishes `order.placed` → `Kitchen` consumes it, then publishes
 - Runtime/framework: **Bun + Fastify + TypeScript** (strict, ESM) in every service
 - Messaging: **RabbitMQ** (topic exchange, durable queues, DLQ)
 - Data: **PostgreSQL**, one database per service
+- Cache + idempotency: **Redis** (menu cache with TTL, event dedup with SETNX + TTL)
 - Edge: **Nginx** reverse proxy / load balancer in front of the gateway
 - Local orchestration: **Docker Compose**
 - CI/CD: **GitHub Actions**
@@ -68,6 +69,12 @@ Add new events here first, define the zod schema in `packages/shared`, then impl
 - Validate all external input (HTTP bodies + event payloads) with **zod**.
 - Structured logging with **pino**, include `eventId`/`orderId` in log context.
 - Errors: throw typed errors, map to proper HTTP status at the route layer.
+- **Step comments** in every file: `// Step 1: Connect to database`, `// Step 2: ...`
+- **Emojis** in all log/console messages: ✅ success, ❌ error, 🚀 startup, ⚠️ warning
+- **`.ts` extensions** on all local imports: `import { foo } from "./foo.ts"`
+- **`buildServer` pattern**: separate `async function buildServer()` from `buildServer().then(start)` — never inline startup
+- Use `server` as the Fastify variable name, never `fastify`
+- Clean sections separated by blank lines and step comments — any teammate must be able to read the file
 
 ## Testing (system-level QA — this is graded)
 
@@ -96,6 +103,10 @@ bun run typecheck                    # tsc --noEmit across workspace
 - Before saying a task is done: run `bun run typecheck` and `bun test` for the touched service.
 - **Never** run `docker compose down -v`, drop a database, or delete migrations without asking first.
 - Don't push to `main` or deploy. Make a branch and open a PR (`gh pr create`).
-- When unsure about a library API, fetch current docs via the **Context7** MCP rather than guessing.
+- **Always fetch library docs via Context7 MCP** before using any library API — never guess, never rely on training data. This applies to postgres.js, ioredis, amqplib, fastify, zod, testcontainers, etc.
+- **Always run Snyk** (`snyk_code_scan`) after writing new first-party TypeScript code. Fix any issues before continuing.
+- **Go file by file.** Complete and explain one file at a time. Wait for confirmation before the next.
+- **Explain every step**: WHY we're doing it, WHAT it means, and how it compares to alternatives. This is a learning project — understanding matters more than speed.
+- Read `.claude/CONTEXT.md` at the start of every session to know the current project state. Update it at the end of each phase.
 
 > Update this file when you correct the same mistake twice — add the shortest rule that would have prevented it, and remove any rule it contradicts.
