@@ -18,7 +18,7 @@ Full plan: `~/.claude/plans/lets-read-the-files-unified-galaxy.md`
 | 1a | Postgres init.sql — create per-service databases | ✅ Done |
 | 1b | Menu service — Postgres table + Redis cache | ✅ Done |
 | 1c | Order service — Postgres tables | ✅ Done |
-| 1d | Kitchen service — Postgres table | ⏳ Pending |
+| 1d | Kitchen service — Postgres table | ✅ Done |
 | 1e | Notification service — Postgres table (audit log) | ⏳ Pending |
 | 2 | Outbox pattern — order service | ⏳ Pending |
 | 3 | Redis idempotency — replace in-memory Idempotency class | ⏳ Pending |
@@ -28,21 +28,19 @@ Full plan: `~/.claude/plans/lets-read-the-files-unified-galaxy.md`
 
 ## Current state
 
-**Phase 1c complete, on branch `phase-1c-order-postgres` (not yet merged).** Order service now persists to `order_db` Postgres: `orders` + `order_items` tables, written together in a single `sql.begin` transaction so an order is never half-saved. `services/order/src/db.ts` is new; `index.ts` rewritten with the `buildServer` pattern, same as menu. Verified manually: `POST /orders` → `201` with persisted data, `GET /orders/:id` returns the order with its items, unknown id → `404`. `order.placed` still publishes only after the transaction commits. Snyk scan: 0 issues. Typecheck green across all services.
+**Phase 1d complete, on branch `phase-1d-kitchen-postgres` (not yet merged).** Kitchen service now persists to `kitchen_db` Postgres: a single `kitchen_orders` table tracks `accepted` → `ready` status per order. `services/kitchen/src/db.ts` is new (`acceptOrder`, `markOrderReady`); `index.ts` rewritten with the `buildServer` pattern (health check only — the actual work is the RabbitMQ consumer). Persist-then-publish ordering preserved: DB write happens before `order.accepted`/`order.ready` are published, same as order service. The existing in-memory `Idempotency` Set is untouched (that's Phase 3); the new `order_id` primary key acts as a second guard against double-accepting the same order. Verified manually end-to-end: placed a real order via the order service, watched kitchen's logs and the `kitchen_orders` row go `accepted` (immediately) → `ready` (after the 3s simulated cook time, `ready_at` populated). Snyk: 0 issues. Typecheck green.
 
-Note: `Channel` type isn't actually re-exported by `@quickbite/shared` (it's a type-only import in `mq.ts`, and `export *` doesn't carry those through) — `services/order/src/index.ts` derives it locally via `Awaited<ReturnType<typeof connect>>["channel"]` instead. Worth revisiting if more services need this type.
-
-**Workflow change as of this phase**: every phase now gets its own branch off `main`, pushed with a PR opened via `gh pr create` — no more direct commits to `main`. Also: no Claude/Anthropic references in any commit message, PR description, or file content (user's explicit preference for this repo). Repo: https://github.com/devinder-dev/quickbite (public).
+**Workflow reminder**: every phase gets its own branch off `main`, pushed with a PR via `gh pr create` — never commit straight to `main`. No Claude/Anthropic references in commits, PRs, or files (user's explicit preference). Repo: https://github.com/devinder-dev/quickbite (public).
 
 ## Next step
 
-**Phase 1d — Kitchen service Postgres table.**
+**Phase 1e — Notification service Postgres table (audit log).**
 
 Files to create/modify:
-- `services/kitchen/src/db.ts` — connect to `kitchen_db`, create `kitchen_orders` table (`order_id uuid pk, eta_minutes int, status text, accepted_at timestamptz`)
-- `services/kitchen/src/index.ts` — replace in-memory idempotency/state with DB INSERT when accepting an order, UPDATE when ready
+- `services/notification/src/db.ts` — connect to `notification_db`, create `notifications` table (`id uuid pk, order_id uuid, event_type text, notified_at timestamptz`)
+- `services/notification/src/index.ts` — on each of the 3 order events consumed, INSERT an audit row
 
-Before starting: branch off `main` as `phase-1d-kitchen-postgres` (after Phase 1c's PR is merged, per the new one-branch-per-phase workflow).
+Before starting: branch off `main` as `phase-1e-notification-postgres` (after Phase 1d's PR is merged).
 
 ## Key files to know
 
