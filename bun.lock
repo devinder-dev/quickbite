@@ -86,6 +86,21 @@
         "testcontainers": "^12.0.3",
       },
     },
+    "tests/e2e": {
+      "name": "@quickbite/e2e",
+      "version": "0.0.0",
+      "dependencies": {
+        "@quickbite/shared": "workspace:*",
+        "postgres": "^3.4.4",
+      },
+      "devDependencies": {
+        "@testcontainers/postgresql": "^12.0.3",
+        "@testcontainers/rabbitmq": "^12.0.3",
+        "@testcontainers/redis": "^12.0.3",
+        "fastify": "^5.0.0",
+        "testcontainers": "^12.0.3",
+      },
+    },
   },
   "packages": {
     "@balena/dockerignore": ["@balena/dockerignore@1.0.2", "", {}, "sha512-wMue2Sy4GAVTk6Ic4tJVcnfdau+gx2EnG7S+uAEe+TWJFqE4YoWN4/H8MSLj4eYJKxGg26lZwboEniNiNwZQ6Q=="],
@@ -139,6 +154,8 @@
     "@protobufjs/pool": ["@protobufjs/pool@1.1.0", "", {}, "sha512-0kELaGSIDBKvcgS4zkjz1PeddatrjYcmMWOlAuAPwAeccUrPHdUqo/J6LiymHHEiJT5NrF1UVwxY14f+fy4WQw=="],
 
     "@protobufjs/utf8": ["@protobufjs/utf8@1.1.1", "", {}, "sha512-oOAWABowe8EAbMyWKM0tYDKi8Yaox52D+HWZhAIJqQXbqe0xI/GV7FhLWqlEKreMkfDjshR5FKgi3mnle0h6Eg=="],
+
+    "@quickbite/e2e": ["@quickbite/e2e@workspace:tests/e2e"],
 
     "@quickbite/gateway": ["@quickbite/gateway@workspace:services/gateway"],
 
