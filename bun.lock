@@ -53,6 +53,7 @@
       "dependencies": {
         "@quickbite/shared": "workspace:*",
         "fastify": "^5.0.0",
+        "postgres": "^3.4.4",
       },
     },
     "services/order": {
