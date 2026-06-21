@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import {
-  connect, consume, publish, Idempotency,
+  connect, consume, publish, RedisIdempotency,
   EventName, type OrderPlaced,
 } from "@quickbite/shared";
 import { acceptOrder, markOrderReady } from "./db.ts";
@@ -17,7 +17,7 @@ async function buildServer(): Promise<FastifyInstance> {
 
 // Step 2: Connect to RabbitMQ, then subscribe to order.placed.
 const { channel } = await connect(RABBITMQ_URL);
-const idem = new Idempotency();
+const idem = new RedisIdempotency("kitchen");
 
 // Kitchen reacts to placed orders: persist + accept, then mark ready a bit later.
 await consume(
@@ -25,7 +25,7 @@ await consume(
   { queue: "kitchen.order-events", routingKeys: [EventName.OrderPlaced] },
   async (event) => {
     const e = event as OrderPlaced;
-    if (idem.alreadyProcessed(e.eventId)) return; // safe on redelivery
+    if (await idem.alreadyProcessed(e.eventId)) return; // safe on redelivery, durable across restarts
 
     const etaMinutes = 20;
 
