@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { OrderItem } from "@quickbite/shared";
 import { createOrder, getOrderById } from "./db.ts";
+import { computeTotalCents } from "./pricing.ts";
 
 const PlaceOrderBody = z.object({
   customerId: z.string().uuid(),
@@ -31,7 +32,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
     const { customerId, items } = parsed.data;
     const orderId = crypto.randomUUID();
-    const totalCents = items.reduce((sum, i) => sum + i.priceCents * i.quantity, 0);
+    const totalCents = computeTotalCents(items);
 
     // Persist the order AND its outbox event in one transaction. No
     // publish() call here at all — the outbox poller is the only thing

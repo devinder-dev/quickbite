@@ -1,0 +1,19 @@
+# Local-development override — adds back host ports for direct access to
+# infra while developing (e.g. running a service bare with `bun run dev:X`
+# against dockerized Postgres/RabbitMQ/Redis, or poking at them with a GUI
+# tool). NOT auto-merged by `docker compose up` (only docker-compose.override.yml
+# is); use explicitly:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# The gateway is deliberately NOT exposed here — even in dev, the only
+# supported way to reach the application is through nginx.
+services:
+  rabbitmq:
+    ports: ["5672:5672", "15672:15672"] # 15672 = management UI
+
+  postgres:
+    ports: ["5432:5432"]
+
+  redis:
+    ports: ["6379:6379"]

@@ -48,8 +48,9 @@ export type ResilientChannel = ReturnType<typeof createResilientChannel>;
 
 const MAX_RETRIES = 3;
 
-// Exponential backoff: 1s, 2s, 4s for retryCount 0, 1, 2.
-function backoffMs(retryCount: number): number {
+// Exponential backoff: 1s, 2s, 4s for retryCount 0, 1, 2. Exported so it has
+// its own unit test, separate from the integration-level retry behavior.
+export function backoffMs(retryCount: number): number {
   return 1000 * 2 ** retryCount;
 }
 
