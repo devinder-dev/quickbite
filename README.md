@@ -1,68 +1,98 @@
 # QuickBite
 
-Event-driven food-ordering platform, built as a system-level QA project.
-Microservices in a Bun workspace, communicating over RabbitMQ.
+Event-driven food-ordering platform: a public API gateway in front of 4
+microservices (menu/product, order, kitchen, notification), talking to each
+other over RabbitMQ and each owning its own PostgreSQL database. Built as a
+system-level QA project — the event flow, persistence, and failure handling
+are the actual point, not just the CRUD surface.
 
-## What's here
+## Architecture
 
-- `packages/shared` — event contracts (zod schemas) + RabbitMQ publish/consume helpers with a dead-letter queue and an idempotency guard. **This is the core.**
-- `services/gateway` — public entry point; proxies reads to menu/order.
-- `services/menu` — menu reads (static list for now).
-- `services/order` — creates orders, publishes `order.placed`.
-- `services/kitchen` — consumes `order.placed`, publishes `order.accepted` then `order.ready`.
-- `services/notification` — consumes all order events, notifies the customer.
+```
+client → nginx (:80) → gateway → menu / order   (synchronous reads)
+                                    |
+                                    v
+                              order.placed (RabbitMQ)
+                                    |
+                       +------------+------------+
+                       v                         v
+                    kitchen                 notification
+                (accepts, then ready)   (logs every order event)
+```
+
+- **nginx is the system's only public entry point.** Every other service —
+  RabbitMQ, Postgres, Redis, and even the gateway itself — is reachable only
+  from other containers on the internal Docker network, never from the host.
+- Synchronous HTTP exists only on the path client → nginx → gateway → service,
+  for user-facing reads (menu, order status). The actual order workflow
+  (placed → accepted → ready → notified) happens entirely over RabbitMQ events.
+- Each service owns its own Postgres database; none of them ever reads or
+  writes another service's tables.
 
 ## Run it
 
+One command, no manual setup steps — database schemas and seed data are
+created automatically on first boot (`docker/init.sql` creates one database
+per service; each service creates its own tables and seeds itself on startup):
+
 ```bash
-cp .env.example .env
 docker compose up --build
 ```
 
-- Gateway via Nginx: http://localhost:8080
-- Gateway direct: http://localhost:3000
-- RabbitMQ management UI: http://localhost:15672 (guest / guest)
-
-Place an order and watch the event flow in the logs:
+**Public entry point:** `http://localhost` (port 80, via nginx). This is the
+only address the system exposes — RabbitMQ's management UI, Postgres, and
+Redis are not reachable from the host with this command.
 
 ```bash
-curl -X POST http://localhost:8080/api/orders \
+# Place an order
+curl -X POST http://localhost/api/orders \
   -H 'content-type: application/json' \
   -d '{"customerId":"33333333-3333-3333-3333-333333333333","items":[{"menuItemId":"44444444-4444-4444-4444-444444444444","name":"Margherita","quantity":2,"priceCents":1200}]}'
+
+# Check its status (replace with the orderId from the response above)
+curl http://localhost/api/orders/<orderId>
+
+# Read the menu
+curl http://localhost/api/menu
 ```
 
-You'll see order -> kitchen (accepted, then ready) -> notification in the container logs.
+Watch `docker compose logs -f kitchen notification` to see the event flow:
+kitchen accepts the order immediately, marks it ready ~3s later (simulated
+cook time), and notification logs all 3 order events as they happen.
 
-## Local dev (without Docker)
+### Local development
 
-Start RabbitMQ (`docker compose up rabbitmq`), then in separate terminals:
+For direct access to Postgres/RabbitMQ/Redis (e.g. a DB GUI, or running one
+service bare with `bun run dev:<service>` against dockerized infra), use the
+dev override, which is not loaded by default:
 
 ```bash
-bun install
-bun run dev:menu
-bun run dev:order
-bun run dev:kitchen
-bun run dev:notification
-bun run dev:gateway
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
 ## Tests
 
 ```bash
-bun test          # unit + (later) integration
+bun run test       # unit + integration (Testcontainers) + end-to-end
 bun run typecheck
 ```
 
-## Deliberately left as TODOs (your build work)
+Runs automatically in CI on every push and pull request (`.github/workflows/ci.yml`).
+No mocks for any infrastructure — integration and e2e tests spin up real
+Postgres/RabbitMQ/Redis containers.
 
-These are stubbed so the scaffold runs immediately. Flesh them out — ideally
-one per Claude Code plan-mode session:
+## Resilience features
 
-1. Replace in-memory stores with **per-service PostgreSQL** databases.
-2. Add the **outbox pattern** so events publish only after the DB commit.
-3. Persist the **idempotency** set to a `processed_events` table.
-4. Add **retry-with-backoff** before dead-lettering in `mq.ts`.
-5. Add **Testcontainers** integration tests (real Postgres + RabbitMQ).
-6. Add an **end-to-end** test: place order -> ready -> notified.
+A few things worth knowing about for the oral defense, beyond the basic flow:
 
-See `CLAUDE.md` for the rules these must follow.
+- **Transactional outbox** (order service) — events are written to an outbox
+  table in the same DB transaction as the order, then published by a separate
+  poller. A crash between commit and publish can never silently drop an event.
+- **Automatic RabbitMQ reconnection** — a dropped broker connection recovers
+  on its own; consumers and the outbox poller resume without a service restart.
+- **Redis-backed idempotency** — every consumer dedupes redelivered events by
+  `eventId`, namespaced per consumer so two services consuming the same event
+  don't interfere with each other.
+- **Retry with exponential backoff** — a failing handler gets 3 retries
+  (1s/2s/4s) via a dead-letter-based delay queue before landing in the
+  permanent dead-letter queue.

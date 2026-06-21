@@ -1,6 +1,5 @@
 import Redis from "ioredis";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const EVENT_SEEN_TTL_SECONDS = 60 * 60 * 24; // 24h — comfortably covers any realistic redelivery window
 
 /**
@@ -22,7 +21,12 @@ export class RedisIdempotency {
   private readonly redis: Redis;
   private readonly namespace: string;
 
-  constructor(namespace: string, redisUrl: string = REDIS_URL) {
+  // redisUrl is read from process.env here, inside the constructor, rather
+  // than into a module-level constant at import time — a test (or any
+  // caller) that sets REDIS_URL before constructing this class must have
+  // that value actually take effect, even if @quickbite/shared was already
+  // imported earlier with no REDIS_URL set yet.
+  constructor(namespace: string, redisUrl: string = process.env.REDIS_URL ?? "redis://localhost:6379") {
     this.namespace = namespace;
     this.redis = new Redis(redisUrl);
   }
