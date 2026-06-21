@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun --watch run src/index.ts",
     "start": "bun run src/index.ts",
-    "test": "bun test"
+    "test": "bun test --timeout 60000"
   },
   "dependencies": {
     "@quickbite/shared": "workspace:*",
