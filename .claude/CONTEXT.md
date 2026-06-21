@@ -23,29 +23,33 @@ Full plan: `~/.claude/plans/lets-read-the-files-unified-galaxy.md`
 | 2 | Outbox pattern — order service | ✅ Done |
 | 3 | Redis idempotency — replace in-memory Idempotency class | ✅ Done |
 | 4 | Retry-with-backoff in mq.ts | ✅ Done |
-| 5 | Testcontainers integration tests | ⏳ Pending |
+| 5 | Testcontainers integration tests | ✅ Done |
 | 6 | End-to-end test | ⏳ Pending |
 
 ## Current state
 
-**Phase 4 complete, on branch `phase-4-retry-backoff` (not yet merged) — this closes out the cross-cutting resilience work (Phases 2-4).** `setupConsumer()` in `packages/shared/src/mq.ts` no longer dead-letters on the first handler failure. Each queue now gets a companion `${queue}.retry` queue (no bindings — only ever reached via `sendToQueue`); on failure, the message is republished there with a per-message `expiration` (exponential backoff: 1s, 2s, 4s for retry 1/2/3) and an `x-retry-count` header, then dead-letters BACK into the original queue once that TTL expires (via the default exchange + `deadLetterRoutingKey`). After `MAX_RETRIES` (3) failed attempts, it falls through to the existing permanent `<queue>.dlq` exactly as before. No service `index.ts` files changed — entirely contained in `mq.ts`, same shape as the Phase 2 reconnect fix.
+**Phase 5 complete, on branch `phase-5-testcontainers` (not yet merged).** Every service now has a real Testcontainers-backed integration test (no mocks for Postgres/RabbitMQ/Redis): `services/order/tests/place-order.test.ts`, `services/kitchen/tests/order-events.test.ts`, `services/notification/tests/order-events.test.ts`, `services/menu/tests/menu.test.ts`. Root `bunfig.toml` sets `[test] timeout = 60000` (container startup exceeds bun's 5s default).
 
-**Real bug caught by manual testing, fixed in the same PR**: a message redelivered via the retry queue arrives through the default exchange with `msg.fields.routingKey` set to the QUEUE NAME, not the original event's routing key (e.g. `order.placed`) — discovered when a 2nd-attempt redelivery threw `TypeError: undefined is not an object (evaluating 'eventSchemas[routingKey].parse')`. Fixed by carrying the true routing key forward in an `x-original-routing-key` header, set on first failure and read in preference to `msg.fields.routingKey` on every subsequent attempt.
+**Key technique**: every service's `db.ts` reads `DATABASE_URL`/`RABBITMQ_URL`/`REDIS_URL` from `process.env` at module-load time (top-level `await ensureSchema()`). Static imports are hoisted before test code runs, so each test sets env vars in `beforeAll` *then* uses a dynamic `await import(...)` to load the module — no service source changes needed for this part. Order's route handler did need one small refactor: `buildServer()` was extracted out of `index.ts` into its own `services/order/src/server.ts`, so tests can `server.inject()` against it without triggering `index.ts`'s real `connect()`+`listen()` startup chain. Kitchen/notification's tests don't need this — they dynamically import the whole `index.ts` (with `PORT=0` for an ephemeral port) precisely because they DO want the real consumer wiring to run.
 
-Verified manually with a throwaway test consumer (not committed) on a dedicated test queue: a handler that fails twice then succeeds on attempt 3 retried at the correct 1s/2s intervals and acked cleanly with no DLQ involvement; a handler that always fails retried exactly 3 times (4 total attempts, t=0/1/3/7s matching the backoff) then landed in the permanent DLQ, with no 4th retry. Re-confirmed the full real order→kitchen→notification happy path afterward — zero retry/error log lines, fully unaffected. Snyk: 0 issues. Typecheck green.
+**Three real bugs found while getting these tests to actually pass, not implementation choices**:
+1. `@testcontainers/postgresql`'s default wait strategy ANDs `Wait.forHealthCheck()` with `Wait.forListeningPorts()` — but the plain `postgres:16` image has no Docker `HEALTHCHECK` (that's exactly why `docker-compose.yml` manually adds a `pg_isready` one), so it hung forever waiting for a health status that would never appear. Fixed in every Postgres-using test by overriding with `Wait.forLogMessage(/database system is ready to accept connections/, 2)`.
+2. `RecoveringChannelModel` (amqplib's recovery wrapper, Phase 2) emits its own `'error'` event separate from `'disconnect'` — an EventEmitter `'error'` with no listener crashes the whole process in Node/Bun. `connect()` in `packages/shared/src/mq.ts` only listened for `'connect'`/`'disconnect'`/`'reconnect-failed'`; added an `'error'` handler. This is a real production hardening fix, not just a test fix — a service could have crashed on certain connection failures before this.
+3. Notification's first integration test initially asserted exact event-arrival order (`["order.placed", "order.accepted", "order.ready"]`) — flaky, because the test publishes all 3 events back-to-back with no delay (unlike the real flow, where kitchen naturally waits ~3s between accepted and ready), so concurrent handler completions can race. Fixed to assert presence via a sorted comparison instead of arrival order.
+
+Also: a cleanup command using a broad `ancestor=postgres:16` Docker filter accidentally removed the actual running `quickbite-postgres-1` container mid-session — caught immediately, no data lost (named volume `pgdata` persisted), container restored via `docker compose up -d postgres`. Worth remembering: never filter Docker cleanup commands by image name when other real containers share that image — scope to the specific container ID instead.
+
+Snyk: 0 issues across all 5 changed packages. Typecheck green. Full `bun test` from the repo root: 12 pass, 0 fail, confirmed stable across repeated runs, exit code 0, no orphaned Testcontainers left running afterward (Ryuk reaper confirmed clean).
 
 **Workflow reminder**: every phase gets its own branch off `main`, pushed with a PR via `gh pr create` — never commit straight to `main`. No Claude/Anthropic references in commits, PRs, or files (user's explicit preference). Repo: https://github.com/devinder-dev/quickbite (public).
 
 ## Next step
 
-**Phase 5 — Testcontainers integration tests.** Goal: real Postgres + RabbitMQ in tests, no mocks for the broker/db — this is the graded testing-pyramid requirement (CLAUDE.md: unit → integration → e2e).
+**Phase 6 — End-to-end test.** Goal: one test spanning the real happy path across all services together: place an order → kitchen accepts → kitchen marks ready → notification logs all 3 events — this is the last item on CLAUDE.md's testing pyramid.
 
-Likely approach:
-- Add `@testcontainers/postgresql` and `@testcontainers/rabbitmq` dev deps to order/kitchen/notification (and menu, for its Postgres+Redis path — also `@testcontainers/redis` there)
-- Flesh out `services/order/tests/place-order.test.ts` (currently a pure unit test, no I/O) into a real integration test: spin up containers, `POST /orders`, assert the DB row + outbox row + eventual publish
-- Similar integration tests for kitchen (consume `order.placed`, assert `kitchen_orders` row + events published) and notification (assert all 3 events logged)
+Likely approach: a new top-level `tests/e2e/order-flow.test.ts` (not inside any single service), spinning up Postgres + RabbitMQ + Redis containers once, dynamically importing all 4 services' entrypoints against those containers (same technique as Phase 5), then driving the flow via a real `POST /orders` and asserting the final state across all 3 databases.
 
-Before starting: branch off `main` as `phase-5-testcontainers` (after Phase 4's PR is merged).
+Before starting: branch off `main` as `phase-6-e2e` (after Phase 5's PR is merged).
 
 ## Key files to know
 

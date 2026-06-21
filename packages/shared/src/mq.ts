@@ -164,6 +164,11 @@ export async function connect(url: string): Promise<{ conn: RecoveringChannelMod
   conn.on("connect", () => console.log("✅ [mq] connected"));
   conn.on("disconnect", (err) => console.warn(`⚠️ [mq] disconnected, will retry: ${err.message}`));
   conn.on("reconnect-failed", (err) => console.error(`❌ [mq] reconnect attempt failed: ${err.message}`));
+  // An EventEmitter's "error" event with no listener crashes the whole
+  // process in Node/Bun. RecoveringChannelModel can emit one independently
+  // of "disconnect" (e.g. a connection torn down mid-handshake) — without
+  // this handler, that single event would take the entire service down.
+  conn.on("error", (err) => console.error(`❌ [mq] connection error: ${err.message}`));
 
   return { conn, channel: resilient };
 }

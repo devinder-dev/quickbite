@@ -10,5 +10,11 @@
     "@quickbite/shared": "workspace:*",
     "fastify": "^5.0.0",
     "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "testcontainers": "^12.0.3",
+    "@testcontainers/postgresql": "^12.0.3",
+    "@testcontainers/rabbitmq": "^12.0.3",
+    "@testcontainers/redis": "^12.0.3"
   }
 }
