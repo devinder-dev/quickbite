@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { connect, consume, Idempotency, EventName } from "@quickbite/shared";
+import { connect, consume, RedisIdempotency, EventName } from "@quickbite/shared";
 import { recordNotification } from "./db.ts";
 
 const PORT = Number(process.env.PORT ?? 3004);
@@ -14,7 +14,7 @@ async function buildServer(): Promise<FastifyInstance> {
 
 // Step 2: Connect to RabbitMQ and subscribe to every order event.
 const { channel } = await connect(RABBITMQ_URL);
-const idem = new Idempotency();
+const idem = new RedisIdempotency("notification");
 
 // Notification listens to ALL order events and tells the customer.
 // Adding this service required ZERO changes to order or kitchen — that's the point.
@@ -26,7 +26,7 @@ await consume(
   },
   async (event, raw) => {
     const e = event as { eventId: string; orderId: string };
-    if (idem.alreadyProcessed(e.eventId)) return;
+    if (await idem.alreadyProcessed(e.eventId)) return; // safe on redelivery, durable across restarts
 
     // Step 3: Record the audit row, then "notify" (still a console.log).
     await recordNotification(e.orderId, raw.fields.routingKey);

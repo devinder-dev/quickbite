@@ -21,30 +21,28 @@ Full plan: `~/.claude/plans/lets-read-the-files-unified-galaxy.md`
 | 1d | Kitchen service — Postgres table | ✅ Done |
 | 1e | Notification service — Postgres table (audit log) | ✅ Done |
 | 2 | Outbox pattern — order service | ✅ Done |
-| 3 | Redis idempotency — replace in-memory Idempotency class | ⏳ Pending |
+| 3 | Redis idempotency — replace in-memory Idempotency class | ✅ Done |
 | 4 | Retry-with-backoff in mq.ts | ⏳ Pending |
 | 5 | Testcontainers integration tests | ⏳ Pending |
 | 6 | End-to-end test | ⏳ Pending |
 
 ## Current state
 
-**Phase 2 complete, on branch `phase-2-outbox` (not yet merged).** Order service now writes an `outbox` row in the same transaction as the order (`services/order/src/db.ts`), and a background poller (`services/order/src/outbox.ts`, `setInterval` every 1s) is the ONLY thing that ever calls `publish()` for `order.placed` — the `POST /orders` route no longer touches RabbitMQ at all. `eventId` is generated once at insert time so poller retries republish the same event identity, collapsing safely under existing idempotency checks.
+**Phase 3 complete, on branch `phase-3-redis-idempotency` (not yet merged).** The in-memory `Idempotency` class is deleted from `packages/shared/src/mq.ts`; replaced by `RedisIdempotency` in the new `packages/shared/src/idempotency.ts`, using an atomic `SET event:{namespace}:{eventId} 1 EX 86400 NX`. Kitchen and notification (the only two consumers — order never consumed anything) each construct their own instance with a distinct namespace: `new RedisIdempotency("kitchen")` / `new RedisIdempotency("notification")`.
 
-**Bigger-than-planned addendum, done in the same PR**: manually testing the crash-gap scenario (stop RabbitMQ, place an order, restart RabbitMQ) revealed `connect()` in `packages/shared/src/mq.ts` never recovered the connection — amqplib doesn't auto-reconnect, so the poller would retry forever and never actually succeed without a full process restart. Fixed by rewriting `mq.ts` to use amqplib's opt-in `recovery` option (bumped `amqplib` `^0.10.4` → `^2.0.0`, which is when this feature reached the version actually usable here — confirmed by inspecting the real published type defs, not just docs). A new `createResilientChannel()` wrapper holds a mutable reference to the current real amqplib `Channel`; `connect()`'s `setup()` callback recreates the channel and replays every registered consumer after each reconnect. **No changes needed to kitchen/notification/order's `index.ts` files** — they all keep calling `publish(channel, ...)` / `consume(channel, ...)` exactly as before; the resilience is entirely inside `mq.ts`. Re-verified the crash-gap test end-to-end: with the SAME order process (no restart), stopping and restarting RabbitMQ now self-heals — logs show `⚠️ [mq] disconnected, will retry` then `✅ [mq] connected`, and the stuck outbox row drains automatically, reaching kitchen.
+**Real bug caught by manual testing, fixed in the same PR**: the first version of `RedisIdempotency` keyed purely on `event:{eventId}`, with no namespace. Since kitchen and notification both consume the SAME `order.placed` event (same `eventId`, two separate queues), whichever service's idempotency check ran first would mark the bare eventId as seen — and the other service's check would then see a false duplicate and silently skip an event it never actually processed. Caught immediately because kitchen's `kitchen_orders` table had no row for a manually-placed test order. The old in-memory `Set` never had this problem because each service held its own private Set; Redis accidentally made the key space global. Fixed by namespacing the key per consumer.
 
-Snyk: 0 issues (both `services/order` and `packages/shared`). Typecheck green across all services.
+Verified manually: normal order flow still works (kitchen accepted→ready, notification logged all 3 events) with correctly-namespaced Redis keys (`event:kitchen:<id>` and `event:notification:<id>` both exist independently for the same eventId); confirmed a second `SET ... NX` for the same key genuinely returns nothing (no overwrite); killed kitchen mid-flight to force a RabbitMQ redelivery and confirmed exactly one `kitchen_orders` row resulted, no duplicate-insert errors. Snyk: 0 issues across `packages/shared`, `services/kitchen`, `services/notification`. Typecheck green.
 
 **Workflow reminder**: every phase gets its own branch off `main`, pushed with a PR via `gh pr create` — never commit straight to `main`. No Claude/Anthropic references in commits, PRs, or files (user's explicit preference). Repo: https://github.com/devinder-dev/quickbite (public).
 
 ## Next step
 
-**Phase 3 — Redis idempotency.** Goal: replace the in-memory `Idempotency` Set in `packages/shared/src/mq.ts` (lost on every restart) with a Redis-backed `SETNX event:{eventId} 1 EX 86400` check, shared across order/kitchen/notification.
+**Phase 4 — Retry-with-backoff in `mq.ts`.** Goal: don't dead-letter a message on the very first handler failure — retry a bounded number of times with exponential backoff first. Today, `consume()`'s try/catch (`packages/shared/src/mq.ts`) nacks straight to the DLQ on any throw, including transient failures like a brief Redis hiccup during the idempotency check just built in Phase 3.
 
-Likely files:
-- `packages/shared/src/idempotency.ts` (new) — `RedisIdempotency` class using `ioredis` (already a menu service dependency; would move to shared or be added fresh here)
-- `services/order/src/index.ts`, `services/kitchen/src/index.ts`, `services/notification/src/index.ts` — swap `new Idempotency()` for the Redis-backed version
+Likely approach: track retry count via message headers (`x-retry-count`), republish to a delayed queue (or use a per-queue dead-letter TTL trick) up to `MAX_RETRIES`, then dead-letter only after that's exhausted.
 
-Before starting: branch off `main` as `phase-3-redis-idempotency` (after Phase 2's PR is merged).
+Before starting: branch off `main` as `phase-4-retry-backoff` (after Phase 3's PR is merged).
 
 ## Key files to know
 

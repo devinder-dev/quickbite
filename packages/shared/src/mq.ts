@@ -147,16 +147,3 @@ export async function consume(channel: ResilientChannel, opts: ConsumeOptions, h
   channel.registrations.push({ opts, handler });
   await setupConsumer(channel, opts, handler);
 }
-
-/**
- * Minimal idempotency guard. Swap the in-memory Set for a DB table
- * (processed_events) so it survives restarts. See CLAUDE.md.
- */
-export class Idempotency {
-  private readonly seen = new Set<string>();
-  alreadyProcessed(eventId: string): boolean {
-    if (this.seen.has(eventId)) return true;
-    this.seen.add(eventId);
-    return false;
-  }
-}
