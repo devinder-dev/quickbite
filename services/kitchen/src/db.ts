@@ -39,3 +39,20 @@ export async function markOrderReady(orderId: string): Promise<void> {
     WHERE order_id = ${orderId}
   `;
 }
+
+export type KitchenOrder = {
+  orderId: string;
+  etaMinutes: number;
+  status: string;
+  readyAt: Date | null;
+};
+
+// Step 5: Read a row back. Returns null on a miss, same convention as
+// order service's getOrderById.
+export async function getKitchenOrder(orderId: string): Promise<KitchenOrder | null> {
+  const [row] = await sql<[{ order_id: string; eta_minutes: number; status: string; ready_at: Date | null }?]>`
+    SELECT order_id, eta_minutes, status, ready_at FROM kitchen_orders WHERE order_id = ${orderId}
+  `;
+  if (!row) return null;
+  return { orderId: row.order_id, etaMinutes: row.eta_minutes, status: row.status, readyAt: row.ready_at };
+}

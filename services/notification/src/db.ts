@@ -31,3 +31,11 @@ export async function recordNotification(orderId: string, eventType: string): Pr
     VALUES (${crypto.randomUUID()}, ${orderId}, ${eventType})
   `;
 }
+
+// Step 4: Read the audit rows for one order, oldest first.
+export async function getNotificationsForOrder(orderId: string): Promise<{ eventType: string }[]> {
+  const rows = await sql<{ event_type: string }[]>`
+    SELECT event_type FROM notifications WHERE order_id = ${orderId} ORDER BY notified_at
+  `;
+  return rows.map((row) => ({ eventType: row.event_type }));
+}

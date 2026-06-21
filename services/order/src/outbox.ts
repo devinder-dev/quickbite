@@ -27,10 +27,13 @@ async function drainOnce(channel: Channel): Promise<void> {
 // also recovers a row that NEVER got an initial publish attempt at all —
 // e.g. the process crashed between commit and the inline publish call.
 // There is no equivalent recovery path for a purely inline drain.
-export function startOutboxPoller(channel: Channel, intervalMs = 1000): void {
+// Returns the interval handle so callers (in practice, only tests) can stop
+// it with clearInterval — production code runs this for the life of the
+// process and never needs to.
+export function startOutboxPoller(channel: Channel, intervalMs = 1000): ReturnType<typeof setInterval> {
   let draining = false;
 
-  setInterval(() => {
+  const timer = setInterval(() => {
     if (draining) return; // skip this tick if the previous one is still running
     draining = true;
     drainOnce(channel)
@@ -41,4 +44,5 @@ export function startOutboxPoller(channel: Channel, intervalMs = 1000): void {
   }, intervalMs);
 
   console.log(`🚀 outbox poller started (every ${intervalMs}ms)`);
+  return timer;
 }
