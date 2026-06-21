@@ -38,12 +38,20 @@ function createResilientChannel() {
     prefetch: (...args: Parameters<Channel["prefetch"]>) => current!.prefetch(...args),
     consume: (...args: Parameters<Channel["consume"]>) => current!.consume(...args),
     publish: (...args: Parameters<Channel["publish"]>) => current!.publish(...args),
+    sendToQueue: (...args: Parameters<Channel["sendToQueue"]>) => current!.sendToQueue(...args),
     ack: (...args: Parameters<Channel["ack"]>) => current!.ack(...args),
     nack: (...args: Parameters<Channel["nack"]>) => current!.nack(...args),
   };
 }
 
 export type ResilientChannel = ReturnType<typeof createResilientChannel>;
+
+const MAX_RETRIES = 3;
+
+// Exponential backoff: 1s, 2s, 4s for retryCount 0, 1, 2.
+function backoffMs(retryCount: number): number {
+  return 1000 * 2 ** retryCount;
+}
 
 // The actual queue/binding/consumer setup, extracted so it can run both for
 // a brand-new consume() call AND be replayed for every past registration
@@ -62,20 +70,61 @@ async function setupConsumer(channel: ResilientChannel, opts: ConsumeOptions, ha
   await channel.assertQueue(queue, { durable: true, deadLetterExchange: dlx });
   for (const key of routingKeys) await channel.bindQueue(queue, EXCHANGE, key);
 
+  // The retry queue holds failed messages for a per-message TTL (set on
+  // each republish below, not on the queue itself — that's what lets each
+  // retry wait longer than the last). No bindings of its own: messages only
+  // ever arrive here via sendToQueue. When a message's TTL expires,
+  // RabbitMQ's default behavior for an expired message is to dead-letter it
+  // — here, to the original queue (via the nameless default exchange +
+  // deadLetterRoutingKey), which is exactly a delayed redelivery.
+  const retryQueue = `${queue}.retry`;
+  await channel.assertQueue(retryQueue, {
+    durable: true,
+    deadLetterExchange: "",
+    deadLetterRoutingKey: queue,
+  });
+
   await channel.prefetch(prefetch);
   await channel.consume(queue, async (msg) => {
     if (!msg) return;
+    // A message redelivered via the retry queue arrives through the default
+    // exchange with msg.fields.routingKey set to the QUEUE name, not the
+    // original event's routing key — so a retried message must carry its
+    // true routing key forward in a header instead of relying on that field
+    // a second time. Fresh (never-retried) deliveries fall back to the
+    // field, which is correct for them.
+    const routingKey = (msg.properties.headers?.["x-original-routing-key"] as EventName) ?? (msg.fields.routingKey as EventName);
+
     try {
-      const routingKey = msg.fields.routingKey as EventName;
       const schema = eventSchemas[routingKey];
       const event = schema.parse(JSON.parse(msg.content.toString()));
       await handler(event, msg);
       channel.ack(msg);
     } catch (err) {
-      // Reject without requeue -> message goes to the dead-letter queue.
-      // TODO: add bounded retry-with-backoff before dead-lettering.
-      console.error(`[mq] handler failed on ${msg.fields.routingKey}, dead-lettering`, err);
-      channel.nack(msg, false, false);
+      const retryCount = (msg.properties.headers?.["x-retry-count"] as number) ?? 0;
+
+      if (retryCount < MAX_RETRIES) {
+        const delayMs = backoffMs(retryCount);
+        console.error(`[mq] handler failed on ${routingKey}, retry ${retryCount + 1}/${MAX_RETRIES} in ${delayMs}ms`, err);
+        channel.sendToQueue(retryQueue, msg.content, {
+          ...msg.properties,
+          headers: {
+            ...msg.properties.headers,
+            "x-retry-count": retryCount + 1,
+            "x-original-routing-key": routingKey,
+          },
+          expiration: String(delayMs),
+        });
+        // We've taken ownership of this message via the retry queue — ack
+        // it off the original queue so it isn't also sent to the DLX.
+        channel.ack(msg);
+      } else {
+        // Retries exhausted — nack without requeue, same as before Phase 4.
+        // The original queue's deadLetterExchange routes this to the
+        // permanent DLQ; that wiring is untouched.
+        console.error(`[mq] handler failed on ${routingKey} after ${MAX_RETRIES} retries, dead-lettering`, err);
+        channel.nack(msg, false, false);
+      }
     }
   });
 }

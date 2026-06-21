@@ -22,27 +22,30 @@ Full plan: `~/.claude/plans/lets-read-the-files-unified-galaxy.md`
 | 1e | Notification service — Postgres table (audit log) | ✅ Done |
 | 2 | Outbox pattern — order service | ✅ Done |
 | 3 | Redis idempotency — replace in-memory Idempotency class | ✅ Done |
-| 4 | Retry-with-backoff in mq.ts | ⏳ Pending |
+| 4 | Retry-with-backoff in mq.ts | ✅ Done |
 | 5 | Testcontainers integration tests | ⏳ Pending |
 | 6 | End-to-end test | ⏳ Pending |
 
 ## Current state
 
-**Phase 3 complete, on branch `phase-3-redis-idempotency` (not yet merged).** The in-memory `Idempotency` class is deleted from `packages/shared/src/mq.ts`; replaced by `RedisIdempotency` in the new `packages/shared/src/idempotency.ts`, using an atomic `SET event:{namespace}:{eventId} 1 EX 86400 NX`. Kitchen and notification (the only two consumers — order never consumed anything) each construct their own instance with a distinct namespace: `new RedisIdempotency("kitchen")` / `new RedisIdempotency("notification")`.
+**Phase 4 complete, on branch `phase-4-retry-backoff` (not yet merged) — this closes out the cross-cutting resilience work (Phases 2-4).** `setupConsumer()` in `packages/shared/src/mq.ts` no longer dead-letters on the first handler failure. Each queue now gets a companion `${queue}.retry` queue (no bindings — only ever reached via `sendToQueue`); on failure, the message is republished there with a per-message `expiration` (exponential backoff: 1s, 2s, 4s for retry 1/2/3) and an `x-retry-count` header, then dead-letters BACK into the original queue once that TTL expires (via the default exchange + `deadLetterRoutingKey`). After `MAX_RETRIES` (3) failed attempts, it falls through to the existing permanent `<queue>.dlq` exactly as before. No service `index.ts` files changed — entirely contained in `mq.ts`, same shape as the Phase 2 reconnect fix.
 
-**Real bug caught by manual testing, fixed in the same PR**: the first version of `RedisIdempotency` keyed purely on `event:{eventId}`, with no namespace. Since kitchen and notification both consume the SAME `order.placed` event (same `eventId`, two separate queues), whichever service's idempotency check ran first would mark the bare eventId as seen — and the other service's check would then see a false duplicate and silently skip an event it never actually processed. Caught immediately because kitchen's `kitchen_orders` table had no row for a manually-placed test order. The old in-memory `Set` never had this problem because each service held its own private Set; Redis accidentally made the key space global. Fixed by namespacing the key per consumer.
+**Real bug caught by manual testing, fixed in the same PR**: a message redelivered via the retry queue arrives through the default exchange with `msg.fields.routingKey` set to the QUEUE NAME, not the original event's routing key (e.g. `order.placed`) — discovered when a 2nd-attempt redelivery threw `TypeError: undefined is not an object (evaluating 'eventSchemas[routingKey].parse')`. Fixed by carrying the true routing key forward in an `x-original-routing-key` header, set on first failure and read in preference to `msg.fields.routingKey` on every subsequent attempt.
 
-Verified manually: normal order flow still works (kitchen accepted→ready, notification logged all 3 events) with correctly-namespaced Redis keys (`event:kitchen:<id>` and `event:notification:<id>` both exist independently for the same eventId); confirmed a second `SET ... NX` for the same key genuinely returns nothing (no overwrite); killed kitchen mid-flight to force a RabbitMQ redelivery and confirmed exactly one `kitchen_orders` row resulted, no duplicate-insert errors. Snyk: 0 issues across `packages/shared`, `services/kitchen`, `services/notification`. Typecheck green.
+Verified manually with a throwaway test consumer (not committed) on a dedicated test queue: a handler that fails twice then succeeds on attempt 3 retried at the correct 1s/2s intervals and acked cleanly with no DLQ involvement; a handler that always fails retried exactly 3 times (4 total attempts, t=0/1/3/7s matching the backoff) then landed in the permanent DLQ, with no 4th retry. Re-confirmed the full real order→kitchen→notification happy path afterward — zero retry/error log lines, fully unaffected. Snyk: 0 issues. Typecheck green.
 
 **Workflow reminder**: every phase gets its own branch off `main`, pushed with a PR via `gh pr create` — never commit straight to `main`. No Claude/Anthropic references in commits, PRs, or files (user's explicit preference). Repo: https://github.com/devinder-dev/quickbite (public).
 
 ## Next step
 
-**Phase 4 — Retry-with-backoff in `mq.ts`.** Goal: don't dead-letter a message on the very first handler failure — retry a bounded number of times with exponential backoff first. Today, `consume()`'s try/catch (`packages/shared/src/mq.ts`) nacks straight to the DLQ on any throw, including transient failures like a brief Redis hiccup during the idempotency check just built in Phase 3.
+**Phase 5 — Testcontainers integration tests.** Goal: real Postgres + RabbitMQ in tests, no mocks for the broker/db — this is the graded testing-pyramid requirement (CLAUDE.md: unit → integration → e2e).
 
-Likely approach: track retry count via message headers (`x-retry-count`), republish to a delayed queue (or use a per-queue dead-letter TTL trick) up to `MAX_RETRIES`, then dead-letter only after that's exhausted.
+Likely approach:
+- Add `@testcontainers/postgresql` and `@testcontainers/rabbitmq` dev deps to order/kitchen/notification (and menu, for its Postgres+Redis path — also `@testcontainers/redis` there)
+- Flesh out `services/order/tests/place-order.test.ts` (currently a pure unit test, no I/O) into a real integration test: spin up containers, `POST /orders`, assert the DB row + outbox row + eventual publish
+- Similar integration tests for kitchen (consume `order.placed`, assert `kitchen_orders` row + events published) and notification (assert all 3 events logged)
 
-Before starting: branch off `main` as `phase-4-retry-backoff` (after Phase 3's PR is merged).
+Before starting: branch off `main` as `phase-5-testcontainers` (after Phase 4's PR is merged).
 
 ## Key files to know
 
