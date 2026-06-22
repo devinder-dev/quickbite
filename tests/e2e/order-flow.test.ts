@@ -42,6 +42,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = dbUrl(postgresC, "order_db");
   const orderServerModule = await import("../../services/order/src/server.ts");
   const orderOutbox = await import("../../services/order/src/outbox.ts");
+  const orderEvents = await import("../../services/order/src/order-events.ts");
 
   process.env.DATABASE_URL = dbUrl(postgresC, "kitchen_db");
   process.env.PORT = "0";
@@ -51,10 +52,12 @@ beforeAll(async () => {
   process.env.PORT = "0";
   await import("../../services/notification/src/index.ts");
 
-  // Step 3: order's own outbox poller needs its own RabbitMQ channel,
-  // exactly like its real startup chain in index.ts.
+  // Step 3: order's own outbox poller AND its event consumer need their own
+  // RabbitMQ channel, exactly like its real startup chain in index.ts.
+  process.env.DATABASE_URL = dbUrl(postgresC, "order_db");
   const { channel } = await connect(rabbitmq.getAmqpUrl());
   orderOutbox.startOutboxPoller(channel, 200);
+  await orderEvents.startOrderEventConsumer(channel);
 
   orderServer = await orderServerModule.buildServer();
 }, 120_000);
@@ -101,4 +104,12 @@ test("place order -> kitchen accepts and readies -> notification logs all 3 even
   expect(kitchenRow?.status).toBe("ready");
   expect(kitchenRow?.readyAt).not.toBeNull();
   expect(notifications.map((n) => n.eventType).sort()).toEqual(["order.accepted", "order.placed", "order.ready"]);
+
+  // Step 6: The actual customer-facing check — order's OWN status via the
+  // real public endpoint, not an internal database. This is what would have
+  // caught order never having subscribed to kitchen's events: kitchen
+  // reaching "ready" in ITS database proves nothing about what a customer
+  // polling GET /orders/:id would actually see.
+  const statusResponse = await orderServer.inject({ method: "GET", url: `/orders/${orderId}` });
+  expect(statusResponse.json().status).toBe("ready");
 });
