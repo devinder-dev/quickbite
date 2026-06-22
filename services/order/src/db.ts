@@ -134,6 +134,18 @@ export async function markOutboxPublished(id: string): Promise<void> {
   await sql`UPDATE outbox SET published_at = now() WHERE id = ${id}`;
 }
 
+// Step 4a: Kitchen's acceptance/readiness only ever updated kitchen's OWN
+// database (kitchen_db) — never order's. Without these, GET /orders/:id
+// would show "placed" forever, since that's the only row order ever
+// writes to its own table.
+export async function markOrderAccepted(orderId: string): Promise<void> {
+  await sql`UPDATE orders SET status = 'accepted' WHERE order_id = ${orderId}`;
+}
+
+export async function markOrderReady(orderId: string): Promise<void> {
+  await sql`UPDATE orders SET status = 'ready' WHERE order_id = ${orderId}`;
+}
+
 // Step 4: Read an order back with its items for GET /orders/:id.
 // Returns null on a miss so the route layer can map that to a 404.
 export async function getOrderById(orderId: string): Promise<StoredOrder | null> {
