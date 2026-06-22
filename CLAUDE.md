@@ -7,7 +7,7 @@
 - Microservices, each owning **only its own** PostgreSQL database. A service **never** reads or writes another service's tables.
 - Inter-service workflow communication is via **RabbitMQ events only**. No direct service-to-service HTTP calls for the order workflow.
 - Synchronous HTTP exists **only** on the path `client → Nginx → API gateway → service` for user-facing reads (menu, order status).
-- The gateway is the single public entry point. Individual services are not exposed publicly.
+- **Nginx is the single public entry point** — it routes `/api/*` and `/health` to the gateway, and everything else to the `frontend` container. Neither the gateway, the frontend, nor any individual service is exposed publicly.
 
 Flow: `Order` publishes `order.placed` → `Kitchen` consumes it, then publishes `order.accepted` and `order.ready` → `Notification` consumes all order events.
 
@@ -17,7 +17,8 @@ Flow: `Order` publishes `order.placed` → `Kitchen` consumes it, then publishes
 - Messaging: **RabbitMQ** (topic exchange, durable queues, DLQ)
 - Data: **PostgreSQL**, one database per service
 - Cache + idempotency: **Redis** (menu cache with TTL, event dedup with SETNX + TTL)
-- Edge: **Nginx** reverse proxy / load balancer in front of the gateway
+- Edge: **Nginx** reverse proxy / load balancer in front of the gateway and the frontend
+- Frontend: **React + Vite + TypeScript**, served as static files by its own Bun-based static server (`frontend/serve.ts`) — additive, non-graded, for manual click-testing
 - Local orchestration: **Docker Compose**
 - CI/CD: **GitHub Actions**
 - Tests: **bun test** + **Testcontainers** for integration
@@ -37,6 +38,7 @@ quickbite/
 │   ├── order/
 │   ├── kitchen/
 │   └── notification/
+├── frontend/              # React + Vite UI — its own container, not a "service" (no DB, no events)
 └── .claude/{commands,agents}/
 ```
 

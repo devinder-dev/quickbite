@@ -50,9 +50,24 @@ After all 6 phases were done, a pass comparing the system against the actual exa
 
 Snyk: 0 issues. Typecheck and full `bun run test` (all 6 packages) green after both bug fixes.
 
+## Addition: React frontend (branch `feature/frontend`, additive, not graded)
+
+After backend submission, the user wanted a UI to click-test the system themselves before the oral defense. New top-level `frontend/` (React + Vite + TypeScript, react-router-dom), its own 7th Docker container with a healthcheck, served by a hand-rolled Bun static file server (`frontend/serve.ts` — path-traversal-safe, SPA-fallback for client routes). `nginx.conf` now splits traffic: `/api/*` and `= /health` → gateway (unchanged), everything else → the new `frontend` upstream — nginx remains the system's only published port.
+
+Key decisions, each one a deliberate fix for a concrete risk surfaced during planning/implementation, not guesswork:
+- **Did NOT import `OrderItem` from `@quickbite/shared`** for client-side cart validation — that package's barrel re-exports `mq.ts`/`idempotency.ts`, which pull in `amqplib`/`ioredis` (Node-only, not browser-safe). Duplicated a minimal zod schema in `frontend/src/lib/orderItem.ts` instead, same "client previews, server stays authoritative" reasoning as `cartTotal.ts` vs. `services/order/src/pricing.ts`.
+- **`useOrderPolling` hook**: setTimeout-chain (never raw `setInterval`, to avoid overlapping in-flight requests), AbortController + `cancelled` flag (no setState-after-unmount), treats a 404 as "not found yet" within a bounded ~60s window (not fatal — the outbox pattern means the row can briefly lag right after `POST /orders` returns), explicit "timed-out" UI state if `"ready"` is never reached.
+- **Real test-infra bug found and fixed**: `@testing-library/react`'s `screen` binds to `document.body` once, at *module-load time* — and ESM hoists all `import` statements above any other code regardless of where they're written. A static `import { cleanup } from "@testing-library/react"` at the top of `frontend/tests/setup.ts`, written after `GlobalRegistrator.register()` in source order, was still being evaluated *before* it at runtime, permanently breaking every `screen.*` query. Fixed with a dynamic `await import("@testing-library/react")` placed after registration. Also needed an `afterEach(cleanup)` — without it, happy-dom's shared document persists rendered output across test files, causing false "multiple elements found" errors.
+- Frontend's own `zod` was pinned to `^3.23.8` to match the rest of the repo (it resolved to v4 by default) — same major version everywhere, deliberately.
+- Verified live, not just via tests: full `docker compose up --build` → `frontend` reaches `healthy` → curl-driven `placed → accepted → ready` through nginx → confirmed a hard-refresh on a deep link like `/orders/<uuid>` returns the SPA shell (200), not a 404 → confirmed path-traversal attempts on `serve.ts` fall through safely to the SPA fallback, never leak a file outside `dist/` → confirmed the public-entry-point invariant still holds (only nginx has a published port; frontend's internal port 3005 is unreachable from the host).
+
+Snyk: 0 issues. Typecheck and full `bun run test` (now 7 packages, frontend included — pure `lib/` unit tests + `happy-dom`-backed component tests) green.
+
+**Per explicit user instruction: do not merge this branch automatically.** Wait for the user's own manual click-through in a real browser before merging — unlike every prior phase, where merge was pre-approved.
+
 ## Next step
 
-This fix-up pass needs to be committed, pushed, and merged via PR (same workflow as every phase — own branch, no Claude/Anthropic references). After that: no more build work planned. The user's next intent is a Q&A/walkthrough session to fully understand the codebase ahead of the oral defense (explain architecture, justify decisions, describe traffic flow, name an error scenario and its handling). Possible further follow-ups if wanted later: a real notification send (email/push, still a `TODO` in `services/notification/src/index.ts`), CI badge/status in `README.md`, or load-testing the outbox poller under concurrent order volume.
+Frontend branch is implemented, tested, and verified server-side — pending the user's own manual browser click-through, then commit/push/PR/merge. After that: no more build work planned. The user's next intent is a Q&A/walkthrough session to fully understand the codebase ahead of the oral defense (explain architecture, justify decisions, describe traffic flow, name an error scenario and its handling). Possible further follow-ups if wanted later: a real notification send (email/push, still a `TODO` in `services/notification/src/index.ts`), CI badge/status in `README.md`, or load-testing the outbox poller under concurrent order volume.
 
 ## Key files to know
 

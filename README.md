@@ -9,20 +9,23 @@ are the actual point, not just the CRUD surface.
 ## Architecture
 
 ```
-client → nginx (:80) → gateway → menu / order   (synchronous reads)
-                                    |
-                                    v
-                              order.placed (RabbitMQ)
-                                    |
-                       +------------+------------+
-                       v                         v
-                    kitchen                 notification
-                (accepts, then ready)   (logs every order event)
+                              +-- /            --> frontend (React UI)
+client → nginx (:80) --------+
+                              +-- /api/*, /health --> gateway → menu / order   (synchronous reads)
+                                                          |
+                                                          v
+                                                    order.placed (RabbitMQ)
+                                                          |
+                                             +------------+------------+
+                                             v                         v
+                                          kitchen                 notification
+                                      (accepts, then ready)   (logs every order event)
 ```
 
 - **nginx is the system's only public entry point.** Every other service —
-  RabbitMQ, Postgres, Redis, and even the gateway itself — is reachable only
-  from other containers on the internal Docker network, never from the host.
+  RabbitMQ, Postgres, Redis, the gateway, and the frontend container itself —
+  is reachable only from other containers on the internal Docker network,
+  never from the host.
 - Synchronous HTTP exists only on the path client → nginx → gateway → service,
   for user-facing reads (menu, order status). The actual order workflow
   (placed → accepted → ready → notified) happens entirely over RabbitMQ events.
@@ -60,6 +63,23 @@ Watch `docker compose logs -f kitchen notification` to see the event flow:
 kitchen accepts the order immediately, marks it ready ~3s later (simulated
 cook time), and notification logs all 3 order events as they happen.
 
+## Frontend
+
+A small React UI lives at `http://localhost/` (same nginx, same port 80) —
+menu → cart → place order → a status screen that polls
+`GET /api/orders/:id` live as it moves placed → accepted → ready, plus a
+localStorage-backed order history. It's same-origin with the API (nginx
+serves both under port 80), so there's no CORS configuration anywhere —
+that's deliberate, not an oversight.
+
+For local frontend development with hot reload, run the backend stack as
+usual and run the frontend separately on the host:
+
+```bash
+docker compose up -d
+bun run dev:frontend   # Vite dev server; proxies /api to http://localhost:80
+```
+
 ### Local development
 
 For direct access to Postgres/RabbitMQ/Redis (e.g. a DB GUI, or running one
@@ -79,7 +99,10 @@ bun run typecheck
 
 Runs automatically in CI on every push and pull request (`.github/workflows/ci.yml`).
 No mocks for any infrastructure — integration and e2e tests spin up real
-Postgres/RabbitMQ/Redis containers.
+Postgres/RabbitMQ/Redis containers. The frontend's tests are split the same
+way: pure logic (`frontend/tests/lib/`, no DOM) and component-rendering
+tests (`frontend/tests/components/`, real DOM via happy-dom +
+Testing Library) — no backend changes needed for either.
 
 ## Resilience features
 
