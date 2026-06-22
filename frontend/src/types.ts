@@ -19,7 +19,7 @@ export type CartLine = {
   quantity: number;
 };
 
-export type OrderStatus = "placed" | "accepted" | "ready";
+export type OrderStatus = "placed" | "accepted" | "cooking" | "ready";
 
 export type OrderSummary = {
   orderId: string;
@@ -33,4 +33,21 @@ export type OrderDetail = {
   status: OrderStatus | string;
   totalCents: number;
   items: CartLine[];
+};
+
+// Mirrors services/kitchen/src/db.ts#KitchenOrder exactly — its routes
+// return the already-camelCased object from db.ts's own fromRow(), not the
+// raw snake_case Postgres columns, so this is camelCase too (unlike
+// MenuItem above, which IS the raw row shape since menu's route returns
+// straight from sql<MenuItem[]>` with no transform step).
+export type KitchenOrder = {
+  orderId: string;
+  customerId: string;
+  items: CartLine[];
+  totalCents: number;
+  etaMinutes: number | null;
+  status: "pending" | "accepted" | "cooking" | "ready" | string;
+  createdAt: string;
+  acceptedAt: string | null;
+  readyAt: string | null;
 };

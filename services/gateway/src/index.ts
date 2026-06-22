@@ -3,6 +3,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 const PORT = Number(process.env.PORT ?? 3000);
 const MENU_URL = process.env.MENU_URL ?? "http://localhost:3001";
 const ORDER_URL = process.env.ORDER_URL ?? "http://localhost:3002";
+const KITCHEN_URL = process.env.KITCHEN_URL ?? "http://localhost:3003";
 
 const app = Fastify({ logger: true });
 
@@ -20,10 +21,18 @@ function proxyTo(prefix: string, upstreamBase: string, rewriteTo: string) {
     const suffix = req.url.slice(prefix.length);
     const targetUrl = `${upstreamBase}${rewriteTo}${suffix}`;
 
-    const hasBody = req.method !== "GET" && req.method !== "HEAD";
+    // req.body is undefined for a request with no body at all (e.g. the
+    // kitchen dashboard's bodyless POST /accept,/start-cooking,/ready
+    // actions) — every prior POST endpoint here (place an order) always
+    // sent a real JSON payload, so forcing this header unconditionally
+    // never surfaced a problem until those bodyless routes existed.
+    // Sending content-type: application/json with NO body makes the
+    // upstream Fastify server reject it outright (FST_ERR_CTP_EMPTY_JSON_BODY)
+    // before the route handler ever runs.
+    const hasBody = req.method !== "GET" && req.method !== "HEAD" && req.body !== undefined;
     const upstreamRes = await fetch(targetUrl, {
       method: req.method,
-      headers: { "content-type": "application/json" },
+      headers: hasBody ? { "content-type": "application/json" } : undefined,
       body: hasBody ? JSON.stringify(req.body) : undefined,
     });
 
@@ -44,6 +53,16 @@ app.all("/api/menu/*", menuProxy);
 const orderProxy = proxyTo("/api/orders", ORDER_URL, "/orders");
 app.all("/api/orders", orderProxy);
 app.all("/api/orders/*", orderProxy);
+
+// "" not "/orders" here — unlike /api/orders (whose gateway segment happens
+// to equal the order service's own route name, so the suffix needs that
+// name re-added), /api/kitchen is a DIFFERENT segment than kitchen's own
+// "/orders" routes. After stripping "/api/kitchen", the suffix already IS
+// the full upstream path (e.g. "/orders/<id>/accept") — re-adding "/orders"
+// here would double it up.
+const kitchenProxy = proxyTo("/api/kitchen", KITCHEN_URL, "");
+app.all("/api/kitchen", kitchenProxy);
+app.all("/api/kitchen/*", kitchenProxy);
 
 app.listen({ port: PORT, host: "0.0.0.0" }).then(() => {
   app.log.info(`gateway listening on ${PORT}`);

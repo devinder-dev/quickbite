@@ -1,7 +1,7 @@
 import { formatCents } from "../lib/money.ts";
 import type { PollState } from "../hooks/useOrderPolling.ts";
 
-const STAGES = ["placed", "accepted", "ready"] as const;
+const STAGES = ["placed", "accepted", "cooking", "ready"] as const;
 
 export function OrderStatus({ state }: { state: PollState }) {
   if (state.phase === "loading") return <p>Loading order…</p>;

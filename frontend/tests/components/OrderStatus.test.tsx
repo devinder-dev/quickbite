@@ -24,6 +24,15 @@ describe("OrderStatus", () => {
     expect(screen.getByText(/Checking for updates every 1.5s/)).toBeDefined();
   });
 
+  test("marks the cooking stage as a distinct step between accepted and ready", () => {
+    const state: PollState = { phase: "polling", order: { ...ORDER, status: "cooking" } };
+    render(<OrderStatus state={state} />);
+    const cooking = screen.getByText("cooking");
+    expect(cooking.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText("accepted").getAttribute("data-done")).toBe("true");
+    expect(screen.getByText("ready").getAttribute("data-done")).toBe("false");
+  });
+
   test("shows the ready stage, order details, and an explanatory banner once ready", () => {
     const state: PollState = { phase: "ready", order: { ...ORDER, status: "ready" } };
     render(<OrderStatus state={state} />);

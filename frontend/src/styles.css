@@ -278,3 +278,97 @@ h1 {
   font-size: 0.85rem;
   color: #6b6354;
 }
+
+.toast-list {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 100;
+  max-width: 320px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--aegean);
+  color: white;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  animation: toast-in 0.15s ease-out;
+}
+
+.toast button {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.1rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kitchen-orders {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.kitchen-order-card {
+  background: white;
+  border: 1px solid var(--cream-dark);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.kitchen-order-card__top {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.kitchen-order-card__id {
+  font-family: monospace;
+}
+
+.kitchen-order-card__status {
+  text-transform: capitalize;
+  color: var(--terracotta-dark);
+}
+
+.kitchen-order-card button {
+  background: var(--olive);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1.25rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.kitchen-order-card button:hover:not(:disabled) {
+  background: var(--olive-dark);
+}
+
+.kitchen-order-card button:disabled {
+  background: #8a8a8a;
+  cursor: not-allowed;
+}
