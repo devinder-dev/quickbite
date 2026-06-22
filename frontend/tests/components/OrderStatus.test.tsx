@@ -7,7 +7,7 @@ const ORDER = {
   orderId: "abc-123",
   customerId: "cust-1",
   totalCents: 1200,
-  items: [{ menuItemId: "1", name: "Margherita", priceCents: 1200, quantity: 1 }],
+  items: [{ menuItemId: "1", name: "Gyros", priceCents: 1200, quantity: 1 }],
 };
 
 describe("OrderStatus", () => {
@@ -16,18 +16,20 @@ describe("OrderStatus", () => {
     expect(screen.getByText("Loading order…")).toBeDefined();
   });
 
-  test("marks the current stage when polling", () => {
+  test("marks the current stage when polling, and explains it's auto-updating", () => {
     const state: PollState = { phase: "polling", order: { ...ORDER, status: "accepted" } };
     render(<OrderStatus state={state} />);
     const accepted = screen.getByText("accepted");
     expect(accepted.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText(/Checking for updates every 1.5s/)).toBeDefined();
   });
 
-  test("shows the ready stage and order details once ready", () => {
+  test("shows the ready stage, order details, and an explanatory banner once ready", () => {
     const state: PollState = { phase: "ready", order: { ...ORDER, status: "ready" } };
     render(<OrderStatus state={state} />);
     expect(screen.getByText("Order #abc-123")).toBeDefined();
     expect(screen.getByText("ready").getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText(/published an event over RabbitMQ/)).toBeDefined();
   });
 
   test("shows an explicit message on timeout, never a silent spinner", () => {

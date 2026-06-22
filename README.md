@@ -50,7 +50,7 @@ Redis are not reachable from the host with this command.
 # Place an order
 curl -X POST http://localhost/api/orders \
   -H 'content-type: application/json' \
-  -d '{"customerId":"33333333-3333-3333-3333-333333333333","items":[{"menuItemId":"44444444-4444-4444-4444-444444444444","name":"Margherita","quantity":2,"priceCents":1200}]}'
+  -d '{"customerId":"33333333-3333-3333-3333-333333333333","items":[{"menuItemId":"44444444-4444-4444-4444-444444444444","name":"Gyros","quantity":2,"priceCents":1100}]}'
 
 # Check its status (replace with the orderId from the response above)
 curl http://localhost/api/orders/<orderId>

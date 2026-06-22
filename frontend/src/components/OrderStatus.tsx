@@ -22,7 +22,15 @@ export function OrderStatus({ state }: { state: PollState }) {
   return (
     <div>
       <OrderStages status={order.status} />
-      <p>Order #{order.orderId}</p>
+      {order.status === "ready" ? (
+        <p className="order-status__ready-banner">
+          ✅ Ready! This update arrived automatically — the kitchen service published an event over RabbitMQ, no
+          page refresh needed.
+        </p>
+      ) : (
+        <p className="order-status__live-note">🔄 Checking for updates every 1.5s — this page will update itself.</p>
+      )}
+      <p className="order-status__id">Order #{order.orderId.slice(0, 8)}</p>
       <p>Total: ${formatCents(order.totalCents)}</p>
       <ul>
         {order.items.map((item) => (
