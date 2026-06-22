@@ -63,7 +63,17 @@ Key decisions, each one a deliberate fix for a concrete risk surfaced during pla
 
 Snyk: 0 issues. Typecheck and full `bun run test` (now 7 packages, frontend included — pure `lib/` unit tests + `happy-dom`-backed component tests) green.
 
-**Per explicit user instruction: do not merge this branch automatically.** Wait for the user's own manual click-through in a real browser before merging — unlike every prior phase, where merge was pre-approved.
+**Per explicit user instruction: do not merge this branch automatically.** Wait for the user's own manual click-through in a real browser before merging — unlike every prior phase, where merge was pre-approved. (PR #12, the original basic version, was merged by the user directly on GitHub.)
+
+### Follow-up 1: Greek taverna theme + readable order history (PR #13)
+
+User feedback after clicking through PR #12: too basic/generic, and order history showed raw UUIDs. Fixed: reseeded the menu with real Greek dishes (`services/menu/src/db.ts` — Gyros/Souvlaki/Greek Salad/Moussaka), redesigned the frontend with a Mediterranean color palette + food-emoji menu cards (`frontend/src/lib/dishInfo.ts`, new), and changed `HistoryEntry` to store a snapshot of items+total captured at placement time (no extra fetch) so history reads "2x Gyros, 1x Greek Salad — $31.00" instead of a bare id. Also added an explicit on-screen explanation of *how* the live status update works ("checking every 1.5s" / "the kitchen service published an event over RabbitMQ") since the user asked how to know it's actually working, not just see a badge change.
+
+### Follow-up 2: real crash found + full live verification pass (still PR #13)
+
+User found a genuine bug by actually clicking "Order history": a browser with localStorage entries from before items/totalCents existed (saved by the *first* frontend version) crashed `OrderHistoryPage` (`entry.items.map(...)` on `items: undefined`) — and with no error boundary, that blanked the entire app. Fixed `getOrderHistory` to validate each entry's actual shape and silently drop anything malformed instead of trusting raw JSON, and added a top-level `ErrorBoundary` (`frontend/src/ErrorBoundary.tsx`) as a backstop for any future unexpected render error. Also noticed `order-events.ts` was the only event consumer in the whole system with no success log line — added one, matching kitchen/notification's existing `✅` convention.
+
+User then asked, explicitly, how to know all events/listeners are working without bugs before final submission — did a full live verification, not just re-running the test suite: traced a real order through `docker compose logs` for order/kitchen/notification (every consumer logged a clear `✅` confirmation), and **published a duplicate `order.placed` event directly to RabbitMQ with the same eventId** to prove the Redis-idempotency dedupe actually collapses a real redelivery (kitchen's log showed `accepted`/`ready` exactly once despite receiving the event twice) — not just trusting the existing unit test for this. Re-confirmed the public-entry-point invariant still holds after all changes.
 
 ## Next step
 
