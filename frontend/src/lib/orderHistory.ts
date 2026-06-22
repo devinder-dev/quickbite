@@ -1,7 +1,19 @@
+import type { CartLine } from "../types.ts";
+
 const STORAGE_KEY = "quickbite.orderHistory";
 const MAX_ENTRIES = 10;
 
-export type HistoryEntry = { orderId: string; placedAt: string };
+// Stores a snapshot of what was actually submitted (items + total), not
+// just the bare id — captured at placement time in MenuPage, from the same
+// cart lines that were just sent to POST /api/orders. Lets the history
+// page show something a human can read ("2x Gyros, 1x Greek Salad — $24.00")
+// instead of a raw UUID, with zero extra network calls.
+export type HistoryEntry = {
+  orderId: string;
+  placedAt: string;
+  items: CartLine[];
+  totalCents: number;
+};
 
 // `storage` is injectable (defaults to the real localStorage) for the same
 // "no I/O" pure-unit-test reason as lib/customerId.ts.

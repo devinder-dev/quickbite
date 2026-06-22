@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { addOrderToHistory, getOrderHistory } from "../../src/lib/orderHistory.ts";
+import type { CartLine } from "../../src/types.ts";
+
+const ITEMS: CartLine[] = [{ menuItemId: "1", name: "Gyros", priceCents: 1100, quantity: 2 }];
 
 function fakeStorage(): Storage {
   const map = new Map<string, string>();
@@ -28,28 +31,37 @@ describe("getOrderHistory", () => {
 });
 
 describe("addOrderToHistory", () => {
-  test("adds the most recent order to the front", () => {
+  test("adds the most recent order to the front, keeping its items/total snapshot", () => {
     const storage = fakeStorage();
-    addOrderToHistory({ orderId: "a", placedAt: "2026-01-01T00:00:00Z" }, storage);
-    const updated = addOrderToHistory({ orderId: "b", placedAt: "2026-01-02T00:00:00Z" }, storage);
+    addOrderToHistory({ orderId: "a", placedAt: "2026-01-01T00:00:00Z", items: ITEMS, totalCents: 2200 }, storage);
+    const updated = addOrderToHistory(
+      { orderId: "b", placedAt: "2026-01-02T00:00:00Z", items: ITEMS, totalCents: 2200 },
+      storage,
+    );
     expect(updated.map((e) => e.orderId)).toEqual(["b", "a"]);
+    expect(updated[0]?.items).toEqual(ITEMS);
+    expect(updated[0]?.totalCents).toBe(2200);
   });
 
   test("de-duplicates by orderId, moving the existing entry to the front", () => {
     const storage = fakeStorage();
-    addOrderToHistory({ orderId: "a", placedAt: "2026-01-01T00:00:00Z" }, storage);
-    addOrderToHistory({ orderId: "b", placedAt: "2026-01-02T00:00:00Z" }, storage);
-    const updated = addOrderToHistory({ orderId: "a", placedAt: "2026-01-03T00:00:00Z" }, storage);
-    expect(updated).toEqual([
-      { orderId: "a", placedAt: "2026-01-03T00:00:00Z" },
-      { orderId: "b", placedAt: "2026-01-02T00:00:00Z" },
-    ]);
+    addOrderToHistory({ orderId: "a", placedAt: "2026-01-01T00:00:00Z", items: ITEMS, totalCents: 2200 }, storage);
+    addOrderToHistory({ orderId: "b", placedAt: "2026-01-02T00:00:00Z", items: ITEMS, totalCents: 2200 }, storage);
+    const updated = addOrderToHistory(
+      { orderId: "a", placedAt: "2026-01-03T00:00:00Z", items: ITEMS, totalCents: 2200 },
+      storage,
+    );
+    expect(updated.map((e) => e.orderId)).toEqual(["a", "b"]);
+    expect(updated[0]?.placedAt).toBe("2026-01-03T00:00:00Z");
   });
 
   test("caps history at 10 entries", () => {
     const storage = fakeStorage();
     for (let i = 0; i < 12; i++) {
-      addOrderToHistory({ orderId: `order-${i}`, placedAt: new Date().toISOString() }, storage);
+      addOrderToHistory(
+        { orderId: `order-${i}`, placedAt: new Date().toISOString(), items: ITEMS, totalCents: 2200 },
+        storage,
+      );
     }
     expect(getOrderHistory(storage)).toHaveLength(10);
   });

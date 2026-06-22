@@ -25,8 +25,8 @@ afterAll(async () => {
 test("getMenuItems returns the seeded items from Postgres", async () => {
   const { getMenuItems } = await import("../src/db.ts");
   const items = await getMenuItems();
-  expect(items).toHaveLength(2);
-  expect(items.map((i) => i.name).sort()).toEqual(["Margherita", "Pepperoni"]);
+  expect(items).toHaveLength(4);
+  expect(items.map((i) => i.name).sort()).toEqual(["Greek Salad", "Gyros", "Moussaka", "Souvlaki"]);
 });
 
 test("cache-aside: a miss populates Redis, and the cached value matches Postgres", async () => {
