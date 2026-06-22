@@ -22,7 +22,7 @@ await consume(
   channel,
   {
     queue: "notification.order-events",
-    routingKeys: [EventName.OrderPlaced, EventName.OrderAccepted, EventName.OrderReady],
+    routingKeys: [EventName.OrderPlaced, EventName.OrderAccepted, EventName.OrderCooking, EventName.OrderReady],
   },
   async (event, raw) => {
     const e = event as { eventId: string; orderId: string };

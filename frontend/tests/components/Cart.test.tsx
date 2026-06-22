@@ -3,8 +3,8 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { Cart } from "../../src/components/Cart.tsx";
 
 const LINES = [
-  { menuItemId: "1", name: "Margherita", priceCents: 1200, quantity: 2 },
-  { menuItemId: "2", name: "Pepperoni", priceCents: 1400, quantity: 1 },
+  { menuItemId: "1", name: "Gyros", priceCents: 1200, quantity: 2 },
+  { menuItemId: "2", name: "Souvlaki", priceCents: 1400, quantity: 1 },
 ];
 
 describe("Cart", () => {

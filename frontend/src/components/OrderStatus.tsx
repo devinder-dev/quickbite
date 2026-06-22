@@ -1,7 +1,6 @@
 import { formatCents } from "../lib/money.ts";
 import type { PollState } from "../hooks/useOrderPolling.ts";
-
-const STAGES = ["placed", "accepted", "ready"] as const;
+import { OrderStages } from "./OrderStages.tsx";
 
 export function OrderStatus({ state }: { state: PollState }) {
   if (state.phase === "loading") return <p>Loading order…</p>;
@@ -22,7 +21,15 @@ export function OrderStatus({ state }: { state: PollState }) {
   return (
     <div>
       <OrderStages status={order.status} />
-      <p>Order #{order.orderId}</p>
+      {order.status === "ready" ? (
+        <p className="order-status__ready-banner">
+          ✅ Ready! This update arrived automatically — the kitchen service published an event over RabbitMQ, no
+          page refresh needed.
+        </p>
+      ) : (
+        <p className="order-status__live-note">🔄 Checking for updates every 1.5s — this page will update itself.</p>
+      )}
+      <p className="order-status__id">Order #{order.orderId.slice(0, 8)}</p>
       <p>Total: ${formatCents(order.totalCents)}</p>
       <ul>
         {order.items.map((item) => (
@@ -32,19 +39,5 @@ export function OrderStatus({ state }: { state: PollState }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-function OrderStages({ status }: { status: string }) {
-  const currentIndex = STAGES.indexOf(status as (typeof STAGES)[number]);
-
-  return (
-    <ol className="order-stages">
-      {STAGES.map((stage, index) => (
-        <li key={stage} aria-current={index === currentIndex} data-done={index <= currentIndex}>
-          {stage}
-        </li>
-      ))}
-    </ol>
   );
 }

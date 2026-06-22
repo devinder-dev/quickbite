@@ -9,7 +9,7 @@
 - Synchronous HTTP exists **only** on the path `client → Nginx → API gateway → service` for user-facing reads (menu, order status).
 - **Nginx is the single public entry point** — it routes `/api/*` and `/health` to the gateway, and everything else to the `frontend` container. Neither the gateway, the frontend, nor any individual service is exposed publicly.
 
-Flow: `Order` publishes `order.placed` → `Kitchen` consumes it, then publishes `order.accepted` and `order.ready` → `Notification` consumes all order events.
+Flow: `Order` publishes `order.placed` → `Kitchen` consumes it and creates a pending order for kitchen staff to act on via its dashboard. Kitchen staff manually accept, start cooking, and mark ready — kitchen publishes `order.accepted`, `order.cooking`, and `order.ready` at each step (no automatic timer). `Order` consumes all three to keep its own status in sync; `Notification` consumes every order event.
 
 ## Tech stack
 
@@ -52,7 +52,8 @@ All payloads share an envelope: `{ eventId: uuid, occurredAt: ISO8601, ... }`.
 |-------------------|--------------|------------------------|------------------------------------------------------|
 | `order.placed`    | order        | kitchen, notification  | `orderId, customerId, items[], totalCents`           |
 | `order.accepted`  | kitchen      | order, notification    | `orderId, etaMinutes`                                |
-| `order.ready`     | kitchen      | notification           | `orderId`                                            |
+| `order.cooking`   | kitchen      | order, notification    | `orderId`                                            |
+| `order.ready`     | kitchen      | order, notification    | `orderId`                                            |
 
 Add new events here first, define the zod schema in `packages/shared`, then implement.
 
