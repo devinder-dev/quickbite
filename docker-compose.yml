@@ -1,8 +1,8 @@
 services:
   # No published ports below except nginx — nginx is the system's only
-  # public entry point. RabbitMQ/Postgres/Redis/the gateway are reachable
-  # only from other containers on the internal Docker network, by service
-  # name. For local debugging access to these, use docker-compose.dev.yml.
+  # public entry point. RabbitMQ/Postgres/Redis/the gateway/the frontend are
+  # reachable only from other containers on the internal Docker network, by
+  # service name. For local debugging access to these, use docker-compose.dev.yml.
   rabbitmq:
     image: rabbitmq:3-management
     healthcheck:
@@ -87,13 +87,27 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    environment:
+      PORT: 3005
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3005/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # The system's single public entry point — every other service above is
   # unreachable from outside the Docker network.
   nginx:
     image: nginx:alpine
     volumes: ["./nginx/nginx.conf:/etc/nginx/nginx.conf:ro"]
     ports: ["80:80"]
-    depends_on: [gateway]
+    depends_on:
+      gateway:
+        condition: service_started
+      frontend:
+        condition: service_healthy
 
 volumes:
   pgdata:
