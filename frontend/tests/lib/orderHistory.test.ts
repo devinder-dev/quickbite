@@ -28,6 +28,22 @@ describe("getOrderHistory", () => {
     storage.setItem("quickbite.orderHistory", "{not json");
     expect(getOrderHistory(storage)).toEqual([]);
   });
+
+  test("drops old-shape entries (no items/totalCents) instead of crashing — regression for a real bug", () => {
+    const storage = fakeStorage();
+    // This is exactly what an earlier version of addOrderToHistory wrote —
+    // a browser that already had this in localStorage before the items/
+    // totalCents fields were added must not crash on it.
+    storage.setItem("quickbite.orderHistory", JSON.stringify([{ orderId: "old", placedAt: "2026-01-01T00:00:00Z" }]));
+    expect(getOrderHistory(storage)).toEqual([]);
+  });
+
+  test("keeps valid entries and drops only the malformed ones from a mixed list", () => {
+    const storage = fakeStorage();
+    const valid = { orderId: "valid", placedAt: "2026-01-01T00:00:00Z", items: ITEMS, totalCents: 2200 };
+    storage.setItem("quickbite.orderHistory", JSON.stringify([valid, { orderId: "old", placedAt: "x" }]));
+    expect(getOrderHistory(storage)).toEqual([valid]);
+  });
 });
 
 describe("addOrderToHistory", () => {

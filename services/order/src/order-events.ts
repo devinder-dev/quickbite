@@ -16,8 +16,13 @@ export async function startOrderEventConsumer(channel: ResilientChannel): Promis
       const e = event as OrderAccepted | OrderReady;
       if (await idem.alreadyProcessed(e.eventId)) return;
 
-      if (e.type === EventName.OrderAccepted) await markOrderAccepted(e.orderId);
-      else await markOrderReady(e.orderId);
+      if (e.type === EventName.OrderAccepted) {
+        await markOrderAccepted(e.orderId);
+        console.log(`✅ order ${e.orderId} synced to accepted`);
+      } else {
+        await markOrderReady(e.orderId);
+        console.log(`✅ order ${e.orderId} synced to ready`);
+      }
     },
   );
 }

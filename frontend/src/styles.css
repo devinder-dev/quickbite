@@ -169,6 +169,24 @@ h1 {
   background: var(--terracotta-dark);
 }
 
+.error-boundary {
+  margin-top: 2rem;
+  padding: 1.25rem;
+  background: #ffe8e4;
+  border: 1px solid var(--terracotta);
+  border-radius: 12px;
+}
+
+.error-boundary button {
+  margin-top: 0.5rem;
+  background: var(--terracotta);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1.25rem;
+  cursor: pointer;
+}
+
 .cart button:disabled {
   background: #8a8a8a;
   cursor: not-allowed;
