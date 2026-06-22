@@ -99,7 +99,17 @@ Snyk: 0 issues. Typecheck and full `bun run test` (7 packages, 76 tests) green, 
 
 User asked, after the submission was already filed, to wipe the dev Postgres volume for the new `kitchen_orders` schema (new/nullable columns) — asked first per CLAUDE.md's hard rule, user said yes (local dev data only).
 
-**Still pending**: this is committed (`wip(kitchen-workflow): ...`) but not yet pushed/PR'd/merged — was paused mid-session for the submission deadline, then resumed.
+This was paused mid-session for the submission deadline, then resumed and pushed as PR #14 (CI green, not merged — same "wait for user's click-through" rule as every frontend PR).
+
+### Follow-up: order tracking was page-scoped, not global (still branch `feature/kitchen-workflow`)
+
+After clicking through PR #14 live, the user reported two related bugs: cooking/ready toasts never appeared, and order progress was only visible by digging into order history, not anywhere on "the front." Root cause for both: `useOrderPolling` and the toast-announcing effect lived entirely inside `OrderStatusPage` — navigate away from `/orders/:id` for any reason (browse the menu, check history, open the kitchen dashboard) and the component unmounts, polling stops, and any transition that happens while not pinned to that exact page is never observed.
+
+Fix: lifted tracking to the app level. New `OrderTrackingContext` (`frontend/src/context/OrderTrackingContext.tsx`) wraps `App.tsx` above `<Routes>` — owns `activeOrderId` (seeded from `getOrderHistory()[0]`, no new storage needed), runs the same `useOrderPolling` hook unchanged, and moved the toast-announcing effect out of `OrderStatusPage` into here so it fires regardless of which page is mounted. New `ActiveOrderBanner` (`frontend/src/components/ActiveOrderBanner.tsx`), rendered once in `App.tsx` above `<Routes>`, so it's visible on every page — the actual fix for "not visible on the front." Extracted `OrderStages` out of `OrderStatus.tsx` into its own file so both components render the identical stage tracker. Also bumped `useOrderPolling`'s timeout from 60s to 30 minutes — that number made sense for the old 3-second timer-driven kitchen, not a human-paced one.
+
+Dismiss behavior is state-aware, not just a one-shot hide: `dismissedAtStatus` tracks which status the banner was dismissed at, so dismissing while "accepted" hides it, but it reappears automatically the moment status changes to "cooking" (new information) — dismissing at "ready" hides it for good since status never changes after that.
+
+Snyk: 0 issues. Typecheck and full `bun run test` (81 tests, 7 packages) green — backend untouched this round, only frontend changed. Verified the production Vite build via Docker actually contains the new code (`grep`'d the built JS bundle for a string unique to `ActiveOrderBanner`) and that `/`, `/history`, `/kitchen`, and a deep-link `/orders/:id` all still serve correctly post-build — the thing component tests alone can't catch.
 
 ## Next step
 

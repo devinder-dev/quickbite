@@ -372,3 +372,35 @@ h1 {
   background: #8a8a8a;
   cursor: not-allowed;
 }
+
+.active-order-banner {
+  background: white;
+  border: 2px solid var(--olive);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.active-order-banner__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.active-order-banner__top button {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.active-order-banner a {
+  display: inline-block;
+  margin-top: 0.5rem;
+  color: var(--aegean);
+  font-weight: 600;
+}

@@ -83,11 +83,16 @@ events, and notification logs all 4 order events as they happen.
 A small React UI lives at `http://localhost/` (same nginx, same port 80) —
 menu → cart → place order → a status screen that polls
 `GET /api/orders/:id` live as it moves placed → accepted → cooking → ready,
-plus a localStorage-backed order history. Every status change shows as a
-real toast notification (not just a silently-updated badge), explaining
-what just happened and why. It's same-origin with the API (nginx serves
-both under port 80), so there's no CORS configuration anywhere — that's
-deliberate, not an oversight.
+plus a localStorage-backed order history. It's same-origin with the API
+(nginx serves both under port 80), so there's no CORS configuration
+anywhere — that's deliberate, not an oversight.
+
+Order tracking isn't scoped to that one status page — it's lifted to the
+app level (`OrderTrackingContext`), so placing an order and then browsing
+the menu, checking history, or anywhere else still surfaces a persistent
+progress banner and real toast notifications for every status change. A
+page-scoped version of this dies the moment you navigate away; this one
+doesn't.
 
 ### Kitchen dashboard
 

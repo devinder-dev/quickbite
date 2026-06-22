@@ -1,7 +1,6 @@
 import { formatCents } from "../lib/money.ts";
 import type { PollState } from "../hooks/useOrderPolling.ts";
-
-const STAGES = ["placed", "accepted", "cooking", "ready"] as const;
+import { OrderStages } from "./OrderStages.tsx";
 
 export function OrderStatus({ state }: { state: PollState }) {
   if (state.phase === "loading") return <p>Loading order…</p>;
@@ -40,19 +39,5 @@ export function OrderStatus({ state }: { state: PollState }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-function OrderStages({ status }: { status: string }) {
-  const currentIndex = STAGES.indexOf(status as (typeof STAGES)[number]);
-
-  return (
-    <ol className="order-stages">
-      {STAGES.map((stage, index) => (
-        <li key={stage} aria-current={index === currentIndex} data-done={index <= currentIndex}>
-          {stage}
-        </li>
-      ))}
-    </ol>
   );
 }
