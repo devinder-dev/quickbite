@@ -52,7 +52,15 @@ export function MenuPage() {
     try {
       const customerId = getOrCreateCustomerId();
       const summary = await placeOrder(customerId, lines);
-      addOrderToHistory({ orderId: summary.orderId, placedAt: new Date().toISOString() });
+      // Snapshot of what was actually submitted — the same `lines` just sent
+      // to POST /api/orders — so the history page can show real item names
+      // and a total instead of a bare UUID, with no extra fetch needed.
+      addOrderToHistory({
+        orderId: summary.orderId,
+        placedAt: new Date().toISOString(),
+        items: lines,
+        totalCents: summary.totalCents,
+      });
       setQuantities({});
       navigate(`/orders/${summary.orderId}`);
     } catch (err) {
@@ -67,7 +75,8 @@ export function MenuPage() {
 
   return (
     <div className="menu-page">
-      <h1>QuickBite</h1>
+      <h1>🫒 QuickBite Taverna</h1>
+      <p className="menu-page__tagline">A taste of Greece, delivered fast.</p>
       <MenuList items={items} quantities={quantities} onChangeQuantity={handleChangeQuantity} />
       <Cart lines={lines} placing={placing} error={placeError} onPlaceOrder={handlePlaceOrder} />
     </div>
