@@ -3,7 +3,12 @@ import { getOrder, OrderNotFoundError } from "../api.ts";
 import type { OrderDetail } from "../types.ts";
 
 const POLL_INTERVAL_MS = 1500;
-const TIMEOUT_MS = 60_000;
+// 30 minutes, not 60 seconds — the kitchen workflow is human-paced now (a
+// real person has to notice an order and click three buttons), not a
+// 3-second simulated timer. A 60s giveup made sense for the old automatic
+// flow; it doesn't for one where the customer might reasonably keep this
+// tracked in the background while a real kitchen catches up.
+const TIMEOUT_MS = 30 * 60_000;
 
 export type PollState =
   | { phase: "loading" }
@@ -34,7 +39,7 @@ export function useOrderPolling(orderId: string): PollState {
   const [state, setState] = useState<PollState>({ phase: "loading" });
 
   useEffect(() => {
-    if (!orderId) return; // defensive only — react-router guarantees this route param is present
+    if (!orderId) return; // OrderStatusPage's route param is always present; OrderTrackingContext legitimately has none until an order is placed
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;

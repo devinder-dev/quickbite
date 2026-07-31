@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { OrderPlaced, EventName } from "../src/events";
+import { OrderCooking, OrderPlaced, EventName } from "../src/events";
 
 test("valid order.placed event passes schema", () => {
   const event = {
@@ -32,4 +32,24 @@ test("order.placed with empty items is rejected", () => {
     totalCents: 0,
   };
   expect(() => OrderPlaced.parse(bad)).toThrow();
+});
+
+test("valid order.cooking event passes schema", () => {
+  const event = {
+    type: EventName.OrderCooking,
+    eventId: "11111111-1111-1111-1111-111111111111",
+    occurredAt: new Date().toISOString(),
+    orderId: "22222222-2222-2222-2222-222222222222",
+  };
+  expect(() => OrderCooking.parse(event)).not.toThrow();
+});
+
+test("order.cooking with the wrong type literal is rejected", () => {
+  const bad = {
+    type: EventName.OrderReady,
+    eventId: "11111111-1111-1111-1111-111111111111",
+    occurredAt: new Date().toISOString(),
+    orderId: "22222222-2222-2222-2222-222222222222",
+  };
+  expect(() => OrderCooking.parse(bad)).toThrow();
 });

@@ -11,6 +11,7 @@ let postgresC: StartedPostgreSqlContainer;
 let rabbitmq: StartedRabbitMQContainer;
 let redis: StartedRedisContainer;
 let orderServer: FastifyInstance;
+let kitchenServer: FastifyInstance;
 
 function dbUrl(container: StartedPostgreSqlContainer, database: string): string {
   return `postgres://${container.getUsername()}:${container.getPassword()}@${container.getHost()}:${container.getPort()}/${database}`;
@@ -44,9 +45,16 @@ beforeAll(async () => {
   const orderOutbox = await import("../../services/order/src/outbox.ts");
   const orderEvents = await import("../../services/order/src/order-events.ts");
 
+  // kitchen/src/index.ts itself uses a top-level await for connect()+
+  // consume() (not a .then() chain) specifically so this import only
+  // resolves once its consumer is actually registered — otherwise the
+  // order.placed event published in the test below could be published
+  // before kitchen's queue binding exists and be silently dropped.
   process.env.DATABASE_URL = dbUrl(postgresC, "kitchen_db");
   process.env.PORT = "0";
   await import("../../services/kitchen/src/index.ts");
+  const kitchenServerModule = await import("../../services/kitchen/src/server.ts");
+  kitchenServer = await kitchenServerModule.buildServer();
 
   process.env.DATABASE_URL = dbUrl(postgresC, "notification_db");
   process.env.PORT = "0";
@@ -68,17 +76,15 @@ afterAll(async () => {
   await redis.stop();
 });
 
-test("place order -> kitchen accepts and readies -> notification logs all 3 events", async () => {
+test("place order -> kitchen staff accept/cook/ready -> order syncs -> notification logs all 4 events", async () => {
   // Step 4: Drive the flow exactly the way a real customer would — one
-  // HTTP request to the order service. Everything after this point (outbox
-  // -> RabbitMQ -> kitchen -> RabbitMQ -> notification) happens on its own,
-  // through the real production code paths for all three services.
+  // HTTP request to the order service.
   const response = await orderServer.inject({
     method: "POST",
     url: "/orders",
     payload: {
       customerId: crypto.randomUUID(),
-      items: [{ menuItemId: crypto.randomUUID(), name: "Margherita", quantity: 1, priceCents: 1200 }],
+      items: [{ menuItemId: crypto.randomUUID(), name: "Gyros", quantity: 1, priceCents: 1100 }],
     },
   });
   expect(response.statusCode).toBe(201);
@@ -87,29 +93,56 @@ test("place order -> kitchen accepts and readies -> notification logs all 3 even
   process.env.DATABASE_URL = dbUrl(postgresC, "kitchen_db");
   const { getKitchenOrder } = await import("../../services/kitchen/src/db.ts");
 
+  // Step 5: Wait for kitchen to actually receive the order.placed event
+  // (via order's outbox poller -> RabbitMQ) before driving the manual
+  // workflow — there's no automatic timer anymore, a human (this test,
+  // standing in for one) has to act at every step.
+  const pendingDeadline = Date.now() + 5000;
+  let kitchenRow = await getKitchenOrder(orderId);
+  while (Date.now() < pendingDeadline && !kitchenRow) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    kitchenRow = await getKitchenOrder(orderId);
+  }
+  expect(kitchenRow?.status).toBe("pending");
+
+  // Step 6: Drive the real HTTP routes kitchen's dashboard would call.
+  const acceptRes = await kitchenServer.inject({ method: "POST", url: `/orders/${orderId}/accept` });
+  expect(acceptRes.statusCode).toBe(200);
+
+  const cookingRes = await kitchenServer.inject({ method: "POST", url: `/orders/${orderId}/start-cooking` });
+  expect(cookingRes.statusCode).toBe(200);
+
+  const readyRes = await kitchenServer.inject({ method: "POST", url: `/orders/${orderId}/ready` });
+  expect(readyRes.statusCode).toBe(200);
+
   process.env.DATABASE_URL = dbUrl(postgresC, "notification_db");
   const { getNotificationsForOrder } = await import("../../services/notification/src/db.ts");
 
-  // Step 5: Poll for the end state across BOTH services' own databases —
-  // the actual proof that the chain worked, not an assumption about timing.
+  // Step 7: Poll for the end state across notification's own database —
+  // the actual proof the chain worked, not an assumption about timing.
   const deadline = Date.now() + 10_000;
-  let kitchenRow = await getKitchenOrder(orderId);
   let notifications = await getNotificationsForOrder(orderId);
-  while (Date.now() < deadline && (kitchenRow?.status !== "ready" || notifications.length < 3)) {
+  while (Date.now() < deadline && notifications.length < 4) {
     await new Promise((resolve) => setTimeout(resolve, 200));
-    kitchenRow = await getKitchenOrder(orderId);
     notifications = await getNotificationsForOrder(orderId);
   }
+  expect(notifications.map((n) => n.eventType).sort()).toEqual(
+    ["order.accepted", "order.cooking", "order.placed", "order.ready"].sort(),
+  );
 
-  expect(kitchenRow?.status).toBe("ready");
-  expect(kitchenRow?.readyAt).not.toBeNull();
-  expect(notifications.map((n) => n.eventType).sort()).toEqual(["order.accepted", "order.placed", "order.ready"]);
-
-  // Step 6: The actual customer-facing check — order's OWN status via the
-  // real public endpoint, not an internal database. This is what would have
-  // caught order never having subscribed to kitchen's events: kitchen
-  // reaching "ready" in ITS database proves nothing about what a customer
-  // polling GET /orders/:id would actually see.
-  const statusResponse = await orderServer.inject({ method: "GET", url: `/orders/${orderId}` });
+  // Step 8: The actual customer-facing check — order's OWN status via the
+  // real public endpoint, not an internal database. Proves order's
+  // consumer actually synced all the way through "cooking" to "ready".
+  // Polled, not a one-shot check: notification and order are two
+  // INDEPENDENT consumers reacting to the same broadcast events, with no
+  // ordering guarantee between them — notification finishing first (which
+  // the wait above just confirmed) says nothing about whether order's own
+  // consumer has caught up to the last event yet.
+  const statusDeadline = Date.now() + 5000;
+  let statusResponse = await orderServer.inject({ method: "GET", url: `/orders/${orderId}` });
+  while (Date.now() < statusDeadline && statusResponse.json().status !== "ready") {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    statusResponse = await orderServer.inject({ method: "GET", url: `/orders/${orderId}` });
+  }
   expect(statusResponse.json().status).toBe("ready");
 });

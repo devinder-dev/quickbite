@@ -9,17 +9,22 @@ are the actual point, not just the CRUD surface.
 ## Architecture
 
 ```
-                              +-- /            --> frontend (React UI)
+                              +-- /            --> frontend (React UI: customer app + kitchen dashboard)
 client → nginx (:80) --------+
-                              +-- /api/*, /health --> gateway → menu / order   (synchronous reads)
+                              +-- /api/*, /health --> gateway → menu / order / kitchen   (synchronous reads + staff actions)
                                                           |
                                                           v
                                                     order.placed (RabbitMQ)
                                                           |
+                                                          v
+                                                       kitchen
+                                          (a human accepts, starts cooking, marks ready —
+                                           no automatic timer; each step publishes its own event)
+                                                          |
                                              +------------+------------+
                                              v                         v
-                                          kitchen                 notification
-                                      (accepts, then ready)   (logs every order event)
+                                           order                  notification
+                                   (syncs its own status)   (logs every order event)
 ```
 
 - **nginx is the system's only public entry point.** Every other service —
@@ -27,8 +32,11 @@ client → nginx (:80) --------+
   is reachable only from other containers on the internal Docker network,
   never from the host.
 - Synchronous HTTP exists only on the path client → nginx → gateway → service,
-  for user-facing reads (menu, order status). The actual order workflow
-  (placed → accepted → ready → notified) happens entirely over RabbitMQ events.
+  for user-facing reads (menu, order status) **and** kitchen staff actions
+  (accept / start cooking / mark ready). The order workflow itself
+  (placed → accepted → cooking → ready → notified) happens entirely over
+  RabbitMQ events — kitchen staff drive it by hand via the dashboard, there
+  is no automatic timer anywhere in this flow.
 - Each service owns its own Postgres database; none of them ever reads or
   writes another service's tables.
 
@@ -50,27 +58,52 @@ Redis are not reachable from the host with this command.
 # Place an order
 curl -X POST http://localhost/api/orders \
   -H 'content-type: application/json' \
-  -d '{"customerId":"33333333-3333-3333-3333-333333333333","items":[{"menuItemId":"44444444-4444-4444-4444-444444444444","name":"Margherita","quantity":2,"priceCents":1200}]}'
+  -d '{"customerId":"33333333-3333-3333-3333-333333333333","items":[{"menuItemId":"44444444-4444-4444-4444-444444444444","name":"Gyros","quantity":2,"priceCents":1100}]}'
 
 # Check its status (replace with the orderId from the response above)
 curl http://localhost/api/orders/<orderId>
 
 # Read the menu
 curl http://localhost/api/menu
+
+# Kitchen staff actions — there's no automatic timer, a human (or the
+# kitchen dashboard at http://localhost/kitchen) drives each step:
+curl -X POST http://localhost/api/kitchen/orders/<orderId>/accept
+curl -X POST http://localhost/api/kitchen/orders/<orderId>/start-cooking
+curl -X POST http://localhost/api/kitchen/orders/<orderId>/ready
 ```
 
-Watch `docker compose logs -f kitchen notification` to see the event flow:
-kitchen accepts the order immediately, marks it ready ~3s later (simulated
-cook time), and notification logs all 3 order events as they happen.
+Watch `docker compose logs -f kitchen order notification` to see the event
+flow: kitchen publishes `order.accepted` / `order.cooking` / `order.ready`
+as each action above runs, order syncs its own status from those same
+events, and notification logs all 4 order events as they happen.
 
 ## Frontend
 
 A small React UI lives at `http://localhost/` (same nginx, same port 80) —
 menu → cart → place order → a status screen that polls
-`GET /api/orders/:id` live as it moves placed → accepted → ready, plus a
-localStorage-backed order history. It's same-origin with the API (nginx
-serves both under port 80), so there's no CORS configuration anywhere —
-that's deliberate, not an oversight.
+`GET /api/orders/:id` live as it moves placed → accepted → cooking → ready,
+plus a localStorage-backed order history. It's same-origin with the API
+(nginx serves both under port 80), so there's no CORS configuration
+anywhere — that's deliberate, not an oversight.
+
+Order tracking isn't scoped to that one status page — it's lifted to the
+app level (`OrderTrackingContext`), so placing an order and then browsing
+the menu, checking history, or anywhere else still surfaces a persistent
+progress banner and real toast notifications for every status change. A
+page-scoped version of this dies the moment you navigate away; this one
+doesn't.
+
+### Kitchen dashboard
+
+`http://localhost/kitchen` — the staff-facing side of the same app. Lists
+every order not yet ready, each with exactly one button for its current
+stage (Accept → Start cooking → Mark ready). No automatic timer drives the
+workflow; clicking through these is what actually publishes
+`order.accepted` / `order.cooking` / `order.ready`. New orders toast in as
+they arrive, the same "every state change is a visible notice" treatment
+the customer side gets. No authentication — matches the rest of this
+no-auth course project.
 
 For local frontend development with hot reload, run the backend stack as
 usual and run the frontend separately on the host:

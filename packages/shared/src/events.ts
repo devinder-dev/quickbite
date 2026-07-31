@@ -11,6 +11,7 @@ export const EXCHANGE = "quickbite.events";
 export const EventName = {
   OrderPlaced: "order.placed",
   OrderAccepted: "order.accepted",
+  OrderCooking: "order.cooking",
   OrderReady: "order.ready",
 } as const;
 export type EventName = (typeof EventName)[keyof typeof EventName];
@@ -45,6 +46,12 @@ export const OrderAccepted = envelope.extend({
 });
 export type OrderAccepted = z.infer<typeof OrderAccepted>;
 
+export const OrderCooking = envelope.extend({
+  type: z.literal(EventName.OrderCooking),
+  orderId: z.string().uuid(),
+});
+export type OrderCooking = z.infer<typeof OrderCooking>;
+
 export const OrderReady = envelope.extend({
   type: z.literal(EventName.OrderReady),
   orderId: z.string().uuid(),
@@ -55,5 +62,6 @@ export type OrderReady = z.infer<typeof OrderReady>;
 export const eventSchemas = {
   [EventName.OrderPlaced]: OrderPlaced,
   [EventName.OrderAccepted]: OrderAccepted,
+  [EventName.OrderCooking]: OrderCooking,
   [EventName.OrderReady]: OrderReady,
 } as const;

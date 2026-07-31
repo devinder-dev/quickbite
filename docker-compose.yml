@@ -39,7 +39,8 @@ services:
       PORT: 3000
       MENU_URL: http://menu:3001
       ORDER_URL: http://order:3002
-    depends_on: [menu, order]
+      KITCHEN_URL: http://kitchen:3003
+    depends_on: [menu, order, kitchen]
 
   menu:
     build: { context: ., dockerfile: services/menu/Dockerfile }
