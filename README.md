@@ -1,5 +1,10 @@
 # QuickBite
 
+[![CI](https://github.com/devinder-dev/quickbite/actions/workflows/ci.yml/badge.svg)](https://github.com/devinder-dev/quickbite/actions/workflows/ci.yml)
+![Bun](https://img.shields.io/badge/Bun-1.x-black?logo=bun)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+
 Event-driven food-ordering platform: a public API gateway in front of 4
 microservices (menu/product, order, kitchen, notification), talking to each
 other over RabbitMQ and each owning its own PostgreSQL database. Built as a
@@ -8,18 +13,31 @@ are the actual point, not just the CRUD surface.
 
 ## Architecture
 
-```
-                              +-- /            --> frontend (React UI)
-client → nginx (:80) --------+
-                              +-- /api/*, /health --> gateway → menu / order   (synchronous reads)
-                                                          |
-                                                          v
-                                                    order.placed (RabbitMQ)
-                                                          |
-                                             +------------+------------+
-                                             v                         v
-                                          kitchen                 notification
-                                      (accepts, then ready)   (logs every order event)
+```mermaid
+flowchart TB
+    client([Client / Browser])
+    client -->|HTTP :80| nginx["nginx — sole public entry point"]
+
+    nginx -->|/| frontend["frontend · React UI"]
+    nginx -->|"/api/*, /health"| gateway["API Gateway"]
+
+    gateway -->|sync HTTP| menu["menu service"]
+    gateway -->|sync HTTP| order["order service"]
+
+    order -->|"order.placed"| rmq{{RabbitMQ}}
+    rmq --> kitchen["kitchen service"]
+    rmq --> notification["notification service"]
+    kitchen -->|"accepted / ready"| rmq
+
+    menu --> pg[("PostgreSQL · db-per-service")]
+    order --> pg
+    kitchen --> pg
+    notification --> pg
+
+    order -.->|idempotency / cache| redis[("Redis")]
+    kitchen -.-> redis
+    notification -.-> redis
+    menu -.-> redis
 ```
 
 - **nginx is the system's only public entry point.** Every other service —
