@@ -16,6 +16,7 @@ A systems-design project, not a CRUD tutorial — the point is the event flow, p
 [![nginx](https://img.shields.io/badge/nginx-reverse%20proxy-009639?logo=nginx&logoColor=white)](https://nginx.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![CI](https://github.com/devinder-dev/quickbite/actions/workflows/ci.yml/badge.svg)](https://github.com/devinder-dev/quickbite/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 </div>
 

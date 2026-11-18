@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * The single source of truth for cross-service events.
  * Add a new event here FIRST (name + schema), then implement it.
- * See the event catalog in CLAUDE.md.
+ * The "Event catalog" section in the README lists who publishes and consumes each one.
  */
 
 export const EXCHANGE = "quickbite.events";

@@ -21,7 +21,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   server.post("/orders/:id/accept", async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!(await getKitchenOrder(id))) return reply.code(404).send({ error: "not found" });
-    await acceptOrder(id, 20); // ETA stays fixed for now — see CLAUDE.md
+    await acceptOrder(id, 20); // fixed 20-minute ETA for now; staff cannot set it yet
     return getKitchenOrder(id);
   });
 

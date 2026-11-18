@@ -179,7 +179,7 @@ export async function connect(url: string): Promise<{ conn: RecoveringChannelMod
  * leaves the service, so a malformed event can never enter the bus.
  *
  * Rule: only call this AFTER your local DB transaction has committed
- * (outbox pattern preferred). See CLAUDE.md.
+ * (outbox pattern preferred). See "How it works" in the README.
  */
 export function publish(channel: ResilientChannel, routingKey: EventName, payload: unknown): void {
   const valid = eventSchemas[routingKey].parse(payload);
