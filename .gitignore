@@ -4,7 +4,3 @@ dist/
 .env
 .DS_Store
 bun.lockb
-
-# Claude Code / AI assistant config (do not publish)
-CLAUDE.md
-.claude/
