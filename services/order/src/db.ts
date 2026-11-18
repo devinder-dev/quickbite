@@ -142,6 +142,10 @@ export async function markOrderAccepted(orderId: string): Promise<void> {
   await sql`UPDATE orders SET status = 'accepted' WHERE order_id = ${orderId}`;
 }
 
+export async function markOrderCooking(orderId: string): Promise<void> {
+  await sql`UPDATE orders SET status = 'cooking' WHERE order_id = ${orderId}`;
+}
+
 export async function markOrderReady(orderId: string): Promise<void> {
   await sql`UPDATE orders SET status = 'ready' WHERE order_id = ${orderId}`;
 }

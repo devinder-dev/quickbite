@@ -1,25 +1,27 @@
-import Fastify, { type FastifyInstance } from "fastify";
-import {
-  connect, consume, publish, RedisIdempotency,
-  EventName, type OrderPlaced,
-} from "@quickbite/shared";
-import { acceptOrder, markOrderReady } from "./db.ts";
+import { connect, consume, EventName, RedisIdempotency, type OrderPlaced } from "@quickbite/shared";
+import { createPendingOrder } from "./db.ts";
+import { startOutboxPoller } from "./outbox.ts";
+import { buildServer } from "./server.ts";
 
 const PORT = Number(process.env.PORT ?? 3003);
 const RABBITMQ_URL = process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672";
 
-// Step 1: Build the server as its own function, separate from starting it.
-async function buildServer(): Promise<FastifyInstance> {
-  const server = Fastify({ logger: true });
-  server.get("/health", async () => ({ status: "ok", service: "kitchen" }));
-  return server;
-}
-
-// Step 2: Connect to RabbitMQ, then subscribe to order.placed.
+// Step 1: Connect to RabbitMQ, start the outbox poller, subscribe to
+// order.placed. Top-level await, not a .then() chain — a test (or anything
+// else) that imports this module needs the consumer to actually be
+// registered by the time the import resolves, or an event published right
+// after import has nowhere to land (a topic exchange silently drops a
+// message with no matching binding yet — not a retryable failure, a lost
+// one). Only the HTTP listen below is allowed to stay fire-and-forget,
+// since nothing's timing depends on it.
 const { channel } = await connect(RABBITMQ_URL);
+startOutboxPoller(channel);
+
 const idem = new RedisIdempotency("kitchen");
 
-// Kitchen reacts to placed orders: persist + accept, then mark ready a bit later.
+// Kitchen no longer decides anything automatically — it just records that
+// an order arrived. A human (via the dashboard's HTTP routes in server.ts)
+// accepts it, starts cooking, and marks it ready.
 await consume(
   channel,
   { queue: "kitchen.order-events", routingKeys: [EventName.OrderPlaced] },
@@ -27,38 +29,12 @@ await consume(
     const e = event as OrderPlaced;
     if (await idem.alreadyProcessed(e.eventId)) return; // safe on redelivery, durable across restarts
 
-    const etaMinutes = 20;
-
-    // Step 3: Persist the acceptance, then publish — same persist-then-publish
-    // ordering the order service uses, so a downstream consumer never reacts
-    // to a kitchen decision that isn't actually recorded here yet.
-    await acceptOrder(e.orderId, etaMinutes);
-    console.log(`✅ kitchen accepted order ${e.orderId}`);
-
-    publish(channel, EventName.OrderAccepted, {
-      type: EventName.OrderAccepted,
-      eventId: crypto.randomUUID(),
-      occurredAt: new Date().toISOString(),
-      orderId: e.orderId,
-      etaMinutes,
-    });
-
-    // Simulate cooking time, then mark ready and announce it.
-    setTimeout(async () => {
-      await markOrderReady(e.orderId);
-      console.log(`✅ kitchen marked order ${e.orderId} ready`);
-
-      publish(channel, EventName.OrderReady, {
-        type: EventName.OrderReady,
-        eventId: crypto.randomUUID(),
-        occurredAt: new Date().toISOString(),
-        orderId: e.orderId,
-      });
-    }, 3000);
+    await createPendingOrder(e.orderId, e.customerId, e.items, e.totalCents);
+    console.log(`✅ kitchen received order ${e.orderId}, awaiting staff action`);
   },
 );
 
-// Step 4: Build and start the HTTP server (health check only).
+// Step 2: Build and start the HTTP server.
 buildServer()
   .then((server) => server.listen({ port: PORT, host: "0.0.0.0" }))
   .then(() => console.log(`🚀 kitchen on ${PORT}`))
